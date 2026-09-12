@@ -8,7 +8,7 @@ import { createPublicClient, createWalletClient, http, parseEther, encodeFunctio
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { anvil } from 'viem/chains'
 import { dispatch } from '../src/catalog'
-import { prepare, execute, status } from '../src/execution'
+import { prepare, execute, status, waitForOperation } from '../src/execution'
 import { Address, Hex, Operation } from '../src/model'
 import { runtimeLayer } from '../src/runtime'
 import { Workflow } from '../src/workflows'
@@ -68,7 +68,7 @@ try {
   pass('agent mode requires approval without prompting or broadcasting')
   const approved = await cli('execute', { id: prepared.plan.id }, ['--yolo'])
   expect(approved.exit).toBe(0)
-  expect(approved.output.result).toMatchObject({ state: { _tag: 'confirmed' } })
+  expect((await cli('wait', { id: prepared.plan.id })).output.result).toMatchObject({ state: { _tag: 'confirmed' } })
   expect(await call('read', { ...base, functionName: 'count' })).toMatchObject({ value: '42' })
   pass('built CLI --yolo signs, broadcasts, and changes contract storage')
   const nonce = await client.getTransactionCount({ address: signer.address })
@@ -92,7 +92,7 @@ try {
   pass('ERC-20 metadata and balance')
   const transfer = await runtime.runPromise(prepare({ chainId: 31337, account: signer.address, to: privateKeyToAccount(generatePrivateKey()).address, data: '0x', value: '1000', key: 'transfer' }))
   const transferResult = await runtime.runPromise(execute({ id: transfer.plan.id, approval: { _tag: 'approved', fingerprint: transfer.plan.fingerprint } }))
-  expect(transferResult.state._tag).toBe('confirmed')
+  expect((await runtime.runPromise(waitForOperation(transferResult.plan.id))).state._tag).toBe('confirmed')
   expect(await client.getBalance({ address: transfer.plan.to })).toBe(1000n)
   pass('exact plan approval executes a native transfer')
   const cancelled = await runtime.runPromise(prepare({ ...transfer.plan, key: 'cancel' }))
@@ -113,6 +113,7 @@ try {
   const before = await client.getTransactionCount({ address: signer.address })
   const simultaneous = await Promise.all([cli('execute', { id: concurrent.plan.id }, ['--yolo']), cli('execute', { id: concurrent.plan.id }, ['--yolo'])])
   expect(simultaneous.some(result => result.output.ok)).toBe(true)
+  expect((await call('wait', { id: concurrent.plan.id }))).toMatchObject({ state: { _tag: 'confirmed' } })
   expect(await client.getTransactionCount({ address: signer.address })).toBe(before + 1)
   pass('concurrent CLI processes submit only one transaction')
   const wrongAccount = await runtime.runPromise(prepare({ ...transfer.plan, key: 'wrong-account' }))
@@ -149,7 +150,8 @@ try {
   expect((await cli('execute', { id: blocked.plan.id }, ['--yolo'])).output.error?.code).toBe('AccountBusy')
   const recovery = ManagedRuntime.make(runtimeLayer({ database, rpcUrl: url }))
   try {
-    const recovered = await recovery.runPromise(execute({ id: interrupted.plan.id, approval: { _tag: 'yolo' } }))
+    await recovery.runPromise(execute({ id: interrupted.plan.id, approval: { _tag: 'yolo' } }))
+    const recovered = await recovery.runPromise(waitForOperation(interrupted.plan.id))
     expect(recovered.state._tag).toBe('confirmed')
     if (persisted.state._tag === 'submitting' && recovered.state._tag === 'confirmed') expect(recovered.state.hash).toBe(persisted.state.hash)
   } finally { await recovery.dispose() }
@@ -175,9 +177,13 @@ try {
     return Schema.decodeUnknownSync(Address)((await client.waitForTransactionReceipt({ hash })).contractAddress)
   }
   const asset = await deploy('Asset'), wrapper = await deploy('Wrapped'), vaultAddress = await deploy('Vault', [asset]), pool = await deploy('Lending'), bridgeAddress = await deploy('Bridge')
-  await wallet.writeContract({ address: asset, abi: parseAbi(['function mint(address,uint256)']), functionName: 'mint', args: [signer.address, 1000000n] })
+  await client.waitForTransactionReceipt({ hash: await wallet.writeContract({ address: asset, abi: parseAbi(['function mint(address,uint256)']), functionName: 'mint', args: [signer.address, 1000000n] }) })
   const destination = privateKeyToAccount(generatePrivateKey()).address
-  const runPlan = async (value: Schema.Json) => { const op = Schema.decodeUnknownSync(Operation)(value); return await call('execute', { id: op.plan.id, approval: { _tag: 'yolo' } }) }
+  const runPlan = async (value: Schema.Json, wait = true) => {
+    const op = Schema.decodeUnknownSync(Operation)(value)
+    const result = await call('execute', { id: op.plan.id, approval: { _tag: 'yolo' } })
+    return wait ? await call('wait', { id: op.plan.id }) : result
+  }
   expect(await runPlan(await call('transfer', { chainId: 31337, account: signer.address, token: asset, to: destination, amount: '100', key: 'token-transfer' }))).toMatchObject({ state: { _tag: 'confirmed' } })
   expect(await client.readContract({ address: asset, abi: erc20Abi, functionName: 'balanceOf', args: [destination] })).toBe(100n)
   await runPlan(await call('approve', { chainId: 31337, account: signer.address, token: asset, spender: destination, amount: '50', key: 'token-approve' }))
@@ -233,21 +239,22 @@ try {
   await runPlan(reorgPlan)
   await evmRpc('evm_revert', [reorgSnapshot])
   expect((await runtime.runPromise(status(reorgPlan.plan.id))).state._tag).toBe('submitting')
-  expect((await runtime.runPromise(execute({ id: reorgPlan.plan.id, approval: { _tag: 'yolo' } }))).state._tag).toBe('confirmed')
+  await runtime.runPromise(execute({ id: reorgPlan.plan.id, approval: { _tag: 'yolo' } }))
+  expect((await runtime.runPromise(waitForOperation(reorgPlan.plan.id))).state._tag).toBe('confirmed')
   pass('reorg removes inclusion and recovers the original signed transaction')
   const replacementOriginal = Schema.decodeUnknownSync(Operation)(await call('transfer', { chainId: 31337, account: signer.address, to: destination, amount: '1', key: 'replacement-original' }))
   await evmRpc('evm_setAutomine', [false])
-  await runPlan(replacementOriginal)
+  await runPlan(replacementOriginal, false)
   const replacement = Schema.decodeUnknownSync(Operation)(await call('replace', { id: replacementOriginal.plan.id, key: 'replacement-new', gasPrice: (BigInt(replacementOriginal.plan.gasPrice) * 2n).toString(), maxPriorityFeePerGas: (BigInt(replacementOriginal.plan.maxPriorityFeePerGas ?? '1') * 2n).toString(), cancel: false }))
   expect(await call('replace', { id: replacementOriginal.plan.id, key: 'replacement-new', gasPrice: replacement.plan.gasPrice, maxPriorityFeePerGas: replacement.plan.maxPriorityFeePerGas ?? '0', cancel: false })).toMatchObject({ plan: { fingerprint: replacement.plan.fingerprint } })
-  await runPlan(replacement)
+  await runPlan(replacement, false)
   await evmRpc('evm_mine', [])
   expect((await runtime.runPromise(status(replacement.plan.id))).state._tag).toBe('confirmed')
   expect((await runtime.runPromise(status(replacementOriginal.plan.id))).state._tag).toBe('superseded')
   await evmRpc('evm_setAutomine', [true])
   pass('same-nonce EIP-1559 replacement supersedes the pending original')
   const raceOriginal = Schema.decodeUnknownSync(Operation)(await call('transfer', { chainId: 31337, account: signer.address, to: destination, amount: '1', key: 'race-original' }))
-  await evmRpc('evm_setAutomine', [false]); await runPlan(raceOriginal)
+  await evmRpc('evm_setAutomine', [false]); await runPlan(raceOriginal, false)
   const raceReplacement = Schema.decodeUnknownSync(Operation)(await call('replace', { id: raceOriginal.plan.id, key: 'race-replace', gasPrice: (BigInt(raceOriginal.plan.gasPrice) * 2n).toString(), maxPriorityFeePerGas: (BigInt(raceOriginal.plan.maxPriorityFeePerGas ?? '1') * 2n).toString(), cancel: false }))
   await evmRpc('evm_mine', []); await evmRpc('evm_setAutomine', [true])
   const raceNonce = await client.getTransactionCount({ address: signer.address })
@@ -272,6 +279,7 @@ try {
     if (method === 'wallet_sendCalls') {
       batchSends++
       batchHash = await wallet.sendTransaction({ to: destination, value: 1n })
+      await client.waitForTransactionReceipt({ hash: batchHash })
       throw new Error('simulated lost batch response')
     }
     return { id: wrongBatchId ? 'wrong-id' : String(params[0]), chainId: '0x7a69', status: batchHash ? 200 : 100, atomic: false, receipts: batchHash ? [{ transactionHash: batchHash }] : [] }
@@ -296,6 +304,7 @@ try {
     expect((await externalRuntime.runPromise(execute({ id: planned.plan.id, approval: { _tag: 'yolo' } }))).state._tag).toBe('walletPending')
     expect(await client.getTransactionCount({ address: signer.address })).toBe(externalNonce)
     if (!walletHash) throw new Error('Expected wallet hash')
+    await client.waitForTransactionReceipt({ hash: walletHash })
     expect(await externalRuntime.runPromise(dispatch('attach-transaction', { id: planned.plan.id, hash: walletHash }))).toMatchObject({ state: { _tag: 'confirmed' } })
   } finally { await externalRuntime.dispose() }
   pass('lost external-wallet responses remain unresolved until a matching transaction hash is attached')
@@ -312,6 +321,7 @@ try {
     expect(first).toMatchObject({ source: { state: 'completed', completedSteps: 2 }, destination: { status: 'IN_PROGRESS' } })
     expect(first).toMatchObject({ settlement: { verified: false } })
     const deliveryHash = await wallet.writeContract({ address: asset, abi: erc20Abi, functionName: 'transfer', args: [destination, 100n] })
+    await client.waitForTransactionReceipt({ hash: deliveryHash })
     const localBridge = { ...result.bridge, request: { ...result.bridge.request, destinationChainId: 31337 } }
     const completed = { quoteId: 'fixture-route', status: 'COMPLETED' as const, destination: { chainId: 31337, receiverAddress: destination, txHash: deliveryHash } }
     expect(await bridgeRuntime.runPromise(verifyBridgeSettlement(localBridge, completed, true))).toMatchObject({ verified: true })
