@@ -1,0 +1,5 @@
+Original EVM toolkit code is by Francesco Oddo. The MIT terms in LICENSE apply to original contributions only.
+
+The Aero dependency in packages/sugar retains its own LICENSE, NOTICE and third-party terms, including Apache-2.0 and Mellow BUSL-1.1. Read packages/sugar/NOTICE and its dated README licensing review. Upstream reference repositories are not included. Runtime dependencies retain their respective licenses.
+
+This is an independent project and is not affiliated with, endorsed by, sponsored by, or maintained by Aerodrome Finance, Velodrome Finance, Dromos Labs, or Mellow Protocol.

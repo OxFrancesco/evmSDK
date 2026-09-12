@@ -1,0 +1,76 @@
+const token = location.hash.slice(1)
+history.replaceState(null, '', location.pathname)
+const element = id => document.getElementById(id)
+const providers = new Map()
+const socket = new WebSocket(`ws://${location.host}/bridge`)
+let selected, address, ready, ended = false, busy = false
+const seen = new Set()
+const status = message => { element('status').textContent = message }
+const error = message => { element('error').textContent = String(message).slice(0, 500) }
+const stop = () => { ended = true; socket.close(); element('wallets').replaceChildren(); element('disconnect').hidden = true; status('Disconnected. Reconnect from EVM to continue.') }
+const chain = async (provider, id) => {
+  const expected = `0x${id.toString(16)}`
+  if (await provider.request({ method: 'eth_chainId' }) !== expected) await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: expected }] })
+  if (await provider.request({ method: 'eth_chainId' }) !== expected) throw new Error('Wallet network differs from the requested chain.')
+}
+const render = () => {
+  if (!ready || selected || ended) return
+  element('wallets').replaceChildren()
+  for (const entry of [...providers.values()].sort((a, b) => Number(b.info.rdns === 'io.rabby') - Number(a.info.rdns === 'io.rabby'))) {
+    const button = document.createElement('button'); button.textContent = entry.info.name; button.disabled = busy
+    button.onclick = async () => {
+      busy = true; render(); error('')
+      try {
+        const accounts = await entry.provider.request({ method: 'eth_requestAccounts' })
+        const candidate = accounts[0]
+        if (!/^0x[0-9a-f]{40}$/i.test(candidate)) throw new Error('Unlock your wallet and select an account.')
+        if (ready.expected && candidate.toLowerCase() !== ready.expected.toLowerCase()) throw new Error('Select the account connected in EVM.')
+        await chain(entry.provider, ready.chainId)
+        const current = await entry.provider.request({ method: 'eth_accounts' })
+        if (current[0]?.toLowerCase() !== candidate.toLowerCase()) throw new Error('Wallet account changed.')
+        if (ended) return
+        selected = entry.provider; address = candidate
+        selected.on('accountsChanged', accounts => { if (accounts[0]?.toLowerCase() !== address.toLowerCase()) stop() })
+        selected.on('disconnect', stop)
+        socket.send(JSON.stringify({ kind: 'connected', address, peer: entry.info.name.slice(0, 120) }))
+        element('wallets').replaceChildren(); element('account').textContent = `${entry.info.name} · ${address}`; element('heading').textContent = 'Wallet connected'
+        element('disconnect').hidden = false; element('retry').hidden = true
+        status('Keep this tab open. Continue in EVM and approve requests in your wallet.')
+      } catch (cause) { error(cause.message) } finally { busy = false; render() }
+    }
+    element('wallets').append(button)
+  }
+  if (!providers.size) status('Unlock Rabby or another browser wallet, then select Find wallets.')
+}
+window.addEventListener('eip6963:announceProvider', event => {
+  const detail = event.detail
+  if (!detail?.info?.name || !detail.info.rdns || !detail.provider?.request || !detail.provider.on || providers.has(detail.info.rdns)) return
+  providers.set(detail.info.rdns, detail); render()
+})
+element('retry').onclick = () => window.dispatchEvent(new Event('eip6963:requestProvider'))
+element('disconnect').onclick = () => { socket.send(JSON.stringify({ kind: 'disconnect' })); stop() }
+socket.onopen = () => socket.send(JSON.stringify({ kind: 'auth', token }))
+socket.onclose = stop
+socket.onmessage = async event => {
+  const message = JSON.parse(event.data)
+  if (message.kind === 'ready') { ready = message; window.dispatchEvent(new Event('eip6963:requestProvider')); render(); return }
+  if (message.kind !== 'request' || !selected || ended || seen.has(message.id)) return
+  seen.add(message.id)
+  let requested = false
+  try {
+    if (busy) throw new Error('Another wallet request is pending.')
+    busy = true
+    if (!['eth_sendTransaction', 'eth_signTypedData_v4', 'wallet_getCapabilities', 'wallet_sendCalls', 'wallet_getCallsStatus'].includes(message.method)) throw new Error('Unsupported wallet request.')
+    await chain(selected, message.chainId)
+    const accounts = await selected.request({ method: 'eth_accounts' })
+    if (accounts[0]?.toLowerCase() !== message.account.toLowerCase() || ended) throw new Error('Wallet account changed or connection closed.')
+    status('Review the request in your wallet.')
+    requested = true
+    const result = await selected.request({ method: message.method, params: message.params })
+    if (!ended) socket.send(JSON.stringify({ kind: 'result', id: message.id, result }))
+    status('Request completed. Continue in EVM.')
+  } catch (cause) {
+    if (!ended) socket.send(JSON.stringify({ kind: 'error', id: message.id, message: String(cause.message).slice(0, 500), rejected: !requested || cause.code === 4001 || cause.code === 5000 }))
+    error(cause.message)
+  } finally { busy = false }
+}

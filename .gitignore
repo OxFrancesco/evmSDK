@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.dev.vars
+.DS_Store
+artifacts/
+fixtures/out/
+fixtures/cache/
+*.sqlite
+*.sqlite-*
+.wrangler/
+.vercel/

@@ -1,0 +1,58 @@
+{
+  "name": "@beegreat/evm",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "evm": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./crossmint": "./src/crossmint.ts",
+    "./model": "./src/model.ts"
+  },
+  "scripts": {
+    "cli": "bun src/cli.ts",
+    "test": "bun test ./src",
+    "test:e2e": "bun scripts/e2e.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --config .oxlintrc.json --tsconfig tsconfig.json src scripts",
+    "build": "bun build src/cli.ts src/index.ts --target=bun --packages=external --outdir=dist",
+    "test:aero": "bun run --cwd packages/sugar test"
+  },
+  "dependencies": {
+    "@beegreat/sugar": "workspace:*",
+    "@crossmint/wallets-sdk": "1.14.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@opentui/core": "0.5.1",
+    "@opentui/react": "0.5.1",
+    "@walletconnect/sign-client": "^2.24.0",
+    "abitype": "1.0.8",
+    "effect": "4.0.0-beta.107",
+    "react": "19.2.8",
+    "uqr": "^0.1.3",
+    "viem": "2.33.1",
+    "ws": "^8.21.3",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "@types/react": "19.2.14",
+    "@types/ws": "^8.18.1",
+    "typescript": "~6.0.3",
+    "oxlint": "1.82.0",
+    "@oxlint/plugins": "1.82.0"
+  },
+  "workspaces": [
+    "packages/sugar"
+  ],
+  "overrides": {
+    "@effect/platform-node-shared": "4.0.0-beta.107"
+  },
+  "packageManager": "bun@1.3.14",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OxFrancesco/evmSDK.git"
+  }
+}

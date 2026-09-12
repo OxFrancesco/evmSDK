@@ -1,0 +1,10 @@
+Associated file: erc20.json
+
+The original artifact was included in the Python Sugar SDK port.
+Copyright 2025 Velodrome Finance
+Upstream portions: Apache-2.0, see ../../LICENSE.Apache-2.0.
+Modified by Francesco Oddo and BeeGreat contributors: the current artifact
+was replaced or extended after the initial port and is not byte-identical
+to the inspected Python SDK reference. Exact later-source provenance remains
+under review. See ../../NOTICE. This notice does not license the underlying
+ERC-20 contract implementations.

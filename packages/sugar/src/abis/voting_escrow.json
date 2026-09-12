@@ -1,0 +1,39 @@
+[
+  {
+    "type": "function",
+    "name": "escrowType",
+    "stateMutability": "view",
+    "inputs": [{ "name": "tokenId", "type": "uint256" }],
+    "outputs": [{ "name": "", "type": "uint8" }]
+  },
+  {
+    "type": "function",
+    "name": "createLock",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "_value", "type": "uint256" },
+      { "name": "_lockDuration", "type": "uint256" }
+    ],
+    "outputs": [{ "name": "", "type": "uint256" }]
+  },
+  {
+    "type": "function",
+    "name": "increaseAmount",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "_tokenId", "type": "uint256" },
+      { "name": "_value", "type": "uint256" }
+    ],
+    "outputs": []
+  },
+  { "type": "function", "name": "increaseUnlockTime", "stateMutability": "nonpayable", "inputs": [{ "name": "_tokenId", "type": "uint256" }, { "name": "_lockDuration", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "withdraw", "stateMutability": "nonpayable", "inputs": [{ "name": "_tokenId", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "merge", "stateMutability": "nonpayable", "inputs": [{ "name": "_from", "type": "uint256" }, { "name": "_to", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "split", "stateMutability": "nonpayable", "inputs": [{ "name": "_from", "type": "uint256" }, { "name": "_amount", "type": "uint256" }], "outputs": [{ "name": "_tokenId1", "type": "uint256" }, { "name": "_tokenId2", "type": "uint256" }] },
+  { "type": "function", "name": "lockPermanent", "stateMutability": "nonpayable", "inputs": [{ "name": "_tokenId", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "unlockPermanent", "stateMutability": "nonpayable", "inputs": [{ "name": "_tokenId", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "delegate", "stateMutability": "nonpayable", "inputs": [{ "name": "delegator", "type": "uint256" }, { "name": "delegatee", "type": "uint256" }], "outputs": [] },
+  { "type": "function", "name": "supply", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "uint256" }] },
+  { "type": "function", "name": "totalSupply", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "uint256" }] },
+  { "type": "function", "name": "tokenId", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "", "type": "uint256" }] }
+]

@@ -1,0 +1,52 @@
+{
+  "name": "@beegreat/sugar",
+  "version": "0.1.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "files": [
+    "src",
+    "scripts",
+    "tsconfig.json",
+    "README.md",
+    "LICENSE",
+    "LICENSE.Apache-2.0",
+    "LICENSE.Mellow-BUSL-1.1",
+    "NOTICE"
+  ],
+  "bin": {
+    "sugar-ts": "./src/cli.ts",
+    "aero": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./cli": "./src/cli.ts",
+    "./contracts": "./src/contracts.ts"
+  },
+  "scripts": {
+    "build": "bun scripts/build-cli.ts",
+    "test:performance": "bun scripts/tui-performance.ts",
+    "cli": "bun run src/cli.ts",
+    "lint": "oxlint --config ../../.oxlintrc.base.json --tsconfig ./tsconfig.json src scripts",
+    "test": "bun test",
+    "test:headless": "bun run scripts/headless.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.0.0-beta.107",
+    "@opentui/core": "0.5.1",
+    "@opentui/react": "0.5.1",
+    "@scure/bip39": "1.6.0",
+    "@walletconnect/sign-client": "2.23.10",
+    "effect": "4.0.0-beta.107",
+    "react": "19.2.8",
+    "unstorage": "1.17.5",
+    "uqr": "0.1.3",
+    "viem": "2.33.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "@types/react": "19.2.14",
+    "typescript": "~6.0.3"
+  }
+}

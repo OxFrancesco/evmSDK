@@ -1,0 +1,85 @@
+BeeGreat Sugar SDK and aero CLI
+
+This is an independent project and is not affiliated with, endorsed by,
+sponsored by, or maintained by Aerodrome Finance, Velodrome Finance,
+Dromos Labs, or Mellow Protocol. Names identify compatibility or source
+attribution only. All trademarks belong to their respective owners.
+
+Python Sugar SDK
+Copyright 2025 Velodrome Finance
+https://github.com/velodrome-finance/sugar-sdk
+Licensed under the Apache License, Version 2.0. See LICENSE.Apache-2.0.
+The upstream LICENSE includes the attribution "Copyright 2022, fastai";
+the distributed license copy retains it verbatim.
+
+This package is a modified TypeScript port, not an upstream release.
+Francesco Oddo and BeeGreat contributors translated Python code, split the
+chain implementation into TypeScript modules, changed numeric handling to
+bigint, integrated Viem and Effect, and added CLI, wallet, and application
+integration behavior. Original BeeGreat contributions remain under the MIT
+terms in LICENSE. Those terms do not replace upstream license conditions.
+
+The initial port is recorded in BeeGreat commit
+41db091c6a194bba3ed7420afede6c5bed876016.
+Reference snapshot inspected for this review:
+e8f7c6a8c069aa23376837fb4eafc53b1377bfdd.
+This snapshot is evidence for the review, not a claim that every file was
+originally copied from that exact revision.
+
+Ported implementation families and their upstream origins:
+- src/chains.ts, src/client.ts, src/pools.ts, src/positions.ts,
+  src/prices.ts, src/quotes.ts, src/tokens.ts, src/transactions.ts:
+  sugar/chains.py and its pool, position, price, quote and token modules.
+- src/config.ts and src/known-tokens.ts: sugar/config.py.
+- src/helpers.ts: sugar/helpers.py and sugar/quote.py.
+- src/models.ts and src/types.ts: sugar/pool.py, sugar/position.py,
+  sugar/token.py, sugar/price.py, sugar/deposit.py, sugar/withdraw.py,
+  sugar/quote.py and sugar/config.py.
+- src/planner.ts: sugar/swap.py.
+- src/superswap.ts: sugar/superswap.py.
+- src/actions.ts and the original CLI behavior: sugar/cli.py.
+- src/abis.ts and original ABI artifacts: sugar/abi.py and sugar/abis/.
+
+At review time, these JSON artifacts were byte-identical to the inspected
+Python SDK reference: bridge_get_fee, bridge_transfer_remote, gauge_basic,
+gauge_cl, interchain_account_router, interchain_router, nfpm, pool_basic,
+price_oracle, quoter, router, slipstream, sugar, sugar_rewards and swapper.
+Their paths are src/abis/<name>.json and upstream sugar/abis/<name>.json.
+The current erc20.json differs from the upstream reference. Additional
+permit2, pool_cl, rewards_distributor, ve_sugar, voter, voting_escrow and
+voting_reward artifacts require a separate exact-source provenance check.
+ABI attribution does not grant rights to underlying contract implementations.
+
+Mellow ALM reference and unresolved permission
+https://github.com/mellow-finance/mellow-alm-toolkit
+Reference revision: bb6da8fe6697dd09ecdd55d327b91a83ae6e7cb9
+Copyright 2021-2025 G3M Labs S. A.
+The PulseStrategyModule source carries SPDX-License-Identifier: BUSL-1.1.
+See LICENSE.Mellow-BUSL-1.1 for the upstream terms. The named change date is
+February 15, 2028; the upstream production-use grant list inspected on
+2026-09-06 contains only a newline and grants no named use.
+
+src/alm/strategy.ts describes itself as replicating PulseStrategyModule.
+src/alm/config.ts, chain.ts and rebalance.ts also reference Mellow behavior.
+Whether these implementations are copyright derivatives remains unresolved.
+To the extent they contain or derive from Mellow's licensed work, that
+material remains subject to Mellow's terms, not this project's MIT grant.
+Including these terms is not a production-use grant. ALM execution has NOT
+been disabled. Do not treat its availability or dry-run mode as legal
+clearance for production use. Obtain permission or a qualified provenance
+review before relying on these strategies in production.
+
+Official TypeScript SDK
+https://github.com/velodrome-finance/sdk.js
+Reference revision: 6b0be4a253a317a0bf5e4620f4e5327db0f80b58
+Both the root and SDK package metadata declare UNLICENSED. No general reuse
+permission was found. This NOTICE does not grant permission for that code.
+The package does not depend on it; this fact alone does not establish that
+no implementation was copied. A full source-history comparison remains open.
+
+Distribution
+Keep LICENSE, LICENSE.Apache-2.0, LICENSE.Mellow-BUSL-1.1 and NOTICE with
+source copies, standalone mirrors and bundled distributions. Include all
+applicable dependency licenses when bundling dependencies. Do not describe
+the complete package as MIT-only or as cleared for unrestricted production
+use while the provenance questions above remain open.
