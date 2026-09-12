@@ -300,11 +300,11 @@ try {
   try {
     const planned = await externalRuntime.runPromise(prepare({ chainId: 31337, account: signer.address, to: destination, value: '1', data: '0x', key: 'external' }))
     expect((await externalRuntime.runPromise(execute({ id: planned.plan.id, approval: { _tag: 'yolo' } }).pipe(Effect.result)))._tag).toBe('Failure')
+    if (!walletHash) throw new Error('Expected wallet hash')
+    await client.waitForTransactionReceipt({ hash: walletHash })
     const externalNonce = await client.getTransactionCount({ address: signer.address })
     expect((await externalRuntime.runPromise(execute({ id: planned.plan.id, approval: { _tag: 'yolo' } }))).state._tag).toBe('walletPending')
     expect(await client.getTransactionCount({ address: signer.address })).toBe(externalNonce)
-    if (!walletHash) throw new Error('Expected wallet hash')
-    await client.waitForTransactionReceipt({ hash: walletHash })
     expect(await externalRuntime.runPromise(dispatch('attach-transaction', { id: planned.plan.id, hash: walletHash }))).toMatchObject({ state: { _tag: 'confirmed' } })
   } finally { await externalRuntime.dispose() }
   pass('lost external-wallet responses remain unresolved until a matching transaction hash is attached')
