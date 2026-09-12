@@ -1,6 +1,7 @@
 // Portions derived from the Python Sugar SDK, Copyright 2025 Velodrome Finance.
 // Modified by Francesco Oddo and BeeGreat contributors: TypeScript port and subsequent changes.
 // Upstream portions are licensed under Apache-2.0. See ../LICENSE.Apache-2.0 and ../NOTICE.
+import { formatUnits } from 'viem'
 import { stockMarket, stockTrade, rebalanceIndex } from './stocks/trading'
 import * as Effect from 'effect/Effect'
 import { SugarClient } from './client'
@@ -365,6 +366,7 @@ const executeCreateVeNft = Effect.fn('SugarActions.createVeNft')(function* (clie
     ve_nft: {
       amount: veNftAmount,
       amount_decimal: tokenToNumber(governanceToken, veNftAmount),
+      amount_formatted: formatUnits(veNftAmount, governanceToken.decimals),
       governance_token: governanceToken.tokenAddress,
       governance_symbol: governanceToken.symbol,
       lock_duration_seconds: lockDurationSeconds,

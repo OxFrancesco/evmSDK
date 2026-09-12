@@ -8,6 +8,7 @@ import { abis } from './abis'
 import { addressKey, applySlippage, chunk, findAllPaths, packPath, tokenContractAddress, tokenToNumber, tupleValues } from './helpers'
 import type { SugarContext } from './internal/context'
 import { clientCall } from './internal/interop'
+import { isTransientRpcFailure, isContractRevert } from './internal/rpc-executor'
 import type { LiquidityPoolForSwap, PathHop, Quote, Token } from './types'
 
 const MULTICALL3: Address = '0xcA11bde05977b3631167028862bE2a173976CA11'
@@ -62,7 +63,7 @@ function prioritizeQuotePaths(ctx: SugarContext, paths: PathHop[][]): PathHop[][
   return [...paths].sort((a, b) => a.length - b.length).slice(0, limit)
 }
 
-type MulticallResponse = Array<{ status: 'success'; result: unknown } | { status: 'failure' }>
+type MulticallResponse = Array<{ status: 'success'; result: unknown } | { status: 'failure'; error?: unknown }>
 
 export const getQuote = Effect.fn('Sugar.Quotes.getQuote')(function* (
   ctx: SugarContext,
@@ -104,10 +105,10 @@ export const getQuote = Effect.fn('Sugar.Quotes.getQuote')(function* (
   const multicallBatches = yield* ctx.rpc.forEachReadResult(
     'quoteExactInput.multicall',
     batches,
-    (batch) =>
+    async (batch) => {
       // SAFETY: viem cannot statically type a multicall over a JSON ABI; each
       // entry mirrors the quoter's (amountOut, ...) tuple or a failure status.
-      ctx.publicClient.multicall({
+      const results = await ctx.publicClient.multicall({
         allowFailure: true,
         multicallAddress: MULTICALL3,
         contracts: batch.map(({ encoded }) => ({
@@ -116,7 +117,11 @@ export const getQuote = Effect.fn('Sugar.Quotes.getQuote')(function* (
           functionName: 'quoteExactInput',
           args: [encoded, amount],
         })),
-      }) as Promise<MulticallResponse>,
+      }) as MulticallResponse
+      const transient = results.find(result => result.status === 'failure' && isTransientRpcFailure(result.error))
+      if (transient?.status === 'failure') throw transient.error
+      return results
+    },
     Math.max(1, Math.min(ctx.settings.requestConcurrency, batches.length)),
     deadline,
   )
@@ -131,7 +136,10 @@ export const getQuote = Effect.fn('Sugar.Quotes.getQuote')(function* (
     }
     batch.forEach((input, index) => {
       const response = batchResult.value[index]
-      if (response?.status !== 'success') return
+      if (response?.status !== 'success') {
+        if (!response || !isContractRevert(response.error, 'quoteExactInput')) fallbackInputs.push(input)
+        return
+      }
       try {
         quotes.push(quoteFromResult(input, response.result))
       } catch {

@@ -279,3 +279,13 @@ describe('unsigned transaction builders', () => {
     expect(() => withdrawalFromPosition(basic, { fraction: '1e-1001' })).toThrow('fraction exponent is too large')
   })
 })
+
+test('fee claims accept basic mixed holdings and gauge-free pools without weakening staking checks', async () => {
+  const basic = { ...position(), staked: 20n, pool: { ...pool(), gauge: ADDRESS_ZERO } }
+  expect((await client().claimFees(basic))[0]?.to).toBe(basic.pool.lp)
+  await expect(client().stake(basic)).rejects.toThrow(/no gauge/)
+  const cl = { ...position(pool(true)), pool: { ...pool(true), gauge: ADDRESS_ZERO } }
+  expect((await client().claimFees(cl))[0]?.to).toBe(cl.pool.nfpm)
+  await expect(client().claimFees({ ...cl, staked: 1n })).rejects.toThrow(/unstake/)
+  await expect(client().claimFees({ ...basic, isAlm: true })).rejects.toThrow(/ALM/)
+})

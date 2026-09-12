@@ -2,7 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createPublicClient, custom, type Address, type Hex, type TransactionReceipt } from 'viem'
+import { createPublicClient, custom, keccak256, toBytes, padHex, toHex, type Address, type Hex, type TransactionReceipt } from 'viem'
 import { SugarClient } from '../client'
 import { createFileJournalStore } from '../execution-journal'
 import { ADDRESS_ZERO, type Position, type Token, type UnsignedTransaction } from '../types'
@@ -50,6 +50,7 @@ function fixture() {
   let spot = 2_000
   let twap: number | undefined = 2_000
   const read = spyOn(publicClient, 'readContract').mockImplementation(stubPublicClient({ readContract: async ({ functionName }) => {
+    if (functionName === 'ownerOf') return wallet
     if (functionName === 'slot0') return [1n, spot]
     if (functionName === 'observe') {
       if (twap === undefined) throw new Error('OLD')
@@ -174,7 +175,13 @@ describe('ALM execution safety', () => {
       f.mint(quote.tickLower, quote.tickUpper)
       return [{ from: wallet, to: poolAddress, value: 0n, data: '0x' }]
     })
+    f.reconcile.mockResolvedValue({ ...receipt, logs: [{ address: poolAddress, data: '0x', topics: [keccak256(toBytes('Transfer(address,address,uint256)')), padHex(ADDRESS_ZERO, { size: 32 }), padHex(wallet, { size: 32 }), toHex(43n, { size: 32 })], blockHash: hash, blockNumber: 1n, transactionHash: hash, transactionIndex: 0, logIndex: 0, removed: false }] })
+    const inventory = spyOn(f.client, 'getPositionsByPool').mockImplementation(async () => {
+      const minted = await f.client.getPositionById(43n, wallet, poolAddress)
+      return minted ? [minted, { ...minted, id: 999n }] : [original]
+    })
     await new AlmEngine(f.options).runPass()
+    expect(inventory).not.toHaveBeenCalled()
     expect(f.logs.filter((line) => line.includes('failed') || line.includes('blocked'))).toEqual([])
     expect(f.sends()).toBe(2)
     expect(f.state().cycle).toMatchObject({ status: { kind: 'complete' }, positionId: '42', resultPositionId: '43' })

@@ -15,13 +15,44 @@ export function noopNotifier(): AlmNotifier {
   return async () => {}
 }
 
+export async function runNotification(command: string[], timeoutMs = 10_000): Promise<{ code: number; stderr: string; timedOut: boolean }> {
+  const child = Bun.spawn(command, { stdout: 'ignore', stderr: 'pipe' })
+  const reader = child.stderr.getReader()
+  let stderr = ''
+  let timedOut = false
+  let forceKill: ReturnType<typeof setTimeout> | undefined
+  const drain = (async () => {
+    const decoder = new TextDecoder()
+    try {
+      for (;;) {
+        const next = await reader.read()
+        if (next.done) break
+        if (stderr.length < 4096) stderr += decoder.decode(next.value).slice(0, 4096 - stderr.length)
+      }
+    } catch { /* The pipe is cancelled after the child exits. */ }
+  })()
+  const timer = setTimeout(() => {
+    timedOut = true
+    child.kill('SIGTERM')
+    forceKill = setTimeout(() => child.kill('SIGKILL'), 1000)
+  }, timeoutMs)
+  try {
+    const code = await child.exited
+    await reader.cancel().catch(() => {})
+    await drain
+    return { code, stderr, timedOut }
+  } finally {
+    clearTimeout(timer)
+    if (forceKill) clearTimeout(forceKill)
+  }
+}
+
 export function buddytgNotifier(log: (line: string) => void = console.error): AlmNotifier {
   return async (html: string) => {
     try {
-      const child = Bun.spawn(['buddytg', 'notify', '--html', html], { stdout: 'ignore', stderr: 'pipe' })
-      if ((await child.exited) !== 0) {
-        const stderr = await new Response(child.stderr).text()
-        log(`telegram notification failed: ${stderr.trim().split('\n')[0] || 'buddytg exited non-zero'}`)
+      const result = await runNotification(['buddytg', 'notify', '--html', html])
+      if (result.timedOut || result.code !== 0) {
+        log(`telegram notification failed: ${result.timedOut ? 'timed out' : result.stderr.trim().split('\n')[0] || 'buddytg exited non-zero'}`)
       }
     } catch (cause) {
       log(`telegram notification failed: ${cause instanceof Error ? cause.message : String(cause)}`)

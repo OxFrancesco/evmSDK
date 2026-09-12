@@ -1,3 +1,4 @@
+import { mintedPositionId } from './minted-position'
 import { encodeFunctionData, type Address, type Hex, type PublicClient } from 'viem'
 import { abis } from '../abis'
 import { SugarClient } from '../client'
@@ -415,7 +416,6 @@ export class AlmEngine {
     let client = this.newClient()
     let position = await client.getPositionById(this.positionId(runtime), this.options.wallet, config.pool)
     if (!position) throw new Error('position disappeared before rebalancing')
-    const previousIds = new Set((await client.getPositionsByPool(config.pool, this.options.wallet)).map((entry) => entry.id))
     const pool = position.pool
     const wasStaked = position.staked > 0n
 
@@ -487,18 +487,26 @@ export class AlmEngine {
     const freshPool = await client.getPoolByAddress(config.pool)
     if (!freshPool) throw new Error('pool vanished from the catalog')
     const funds = await available()
-    hashes.push(...await this.sendPhase(runtime,
+    const depositHashes = await this.sendPhase(runtime,
       'deposit',
       pool.symbol,
       toPlanSteps(await this.buildDeposit(client, freshPool, decision, funds, config.slippage)),
-    ))
+    )
+    hashes.push(...depositHashes)
 
     // Phase 6: stake the new position when the gauge is live.
     client = this.newClient()
-    const candidates = (await client.getPositionsByPool(config.pool, this.options.wallet)).filter((entry) => !previousIds.has(entry.id))
-    const minted = candidates.length === 1 ? candidates[0] : undefined
-    if (!minted || minted.id === this.positionId(runtime) || minted.tickLower !== decision.tickLower || minted.tickUpper !== decision.tickUpper || minted.staked !== 0n || minted.liquidity === 0n) {
-      throw new Error('Could not identify the freshly minted position; inspect the cycle and recover manually')
+    const receipts = await Promise.all(depositHashes.map(async (hash) => {
+      const receipt = await this.publicClient.getTransactionReceipt({ hash })
+      if (receipt.transactionHash.toLowerCase() !== hash.toLowerCase()) throw new Error('Deposit receipt hash does not match the submitted transaction')
+      return receipt
+    }))
+    const id = mintedPositionId(receipts, freshPool.nfpm, this.options.wallet)
+    const owner = await this.publicClient.readContract({ address: freshPool.nfpm, abi: [{ type: 'function', name: 'ownerOf', stateMutability: 'view', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [{ name: 'owner', type: 'address' }] }], functionName: 'ownerOf', args: [id] })
+    if (addressKey(owner) !== addressKey(this.options.wallet)) throw new Error('Minted position is no longer owned by the managed wallet')
+    const minted = await client.getPositionById(id, this.options.wallet, config.pool)
+    if (!minted || addressKey(minted.pool.lp) !== addressKey(config.pool) || minted.id === this.positionId(runtime) || minted.tickLower !== decision.tickLower || minted.tickUpper !== decision.tickUpper || minted.staked !== 0n || minted.liquidity === 0n) {
+      throw new Error('Minted position does not match the confirmed deposit; inspect the cycle and recover manually')
     }
     this.updateCycle(runtime, { resultPositionId: minted.id.toString() })
     if (freshPool.gaugeAlive && freshPool.gauge !== ADDRESS_ZERO) {

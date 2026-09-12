@@ -473,10 +473,10 @@ export const claimFees = Effect.fn('Sugar.Transactions.claimFees')(function* (
   unwrapNative = false,
 ) {
   return yield* Effect.sync(() => {
-    assertPosition(position)
-    if (position.staked > 0n) throw new Error('position is staked; unstake first to claim fees')
+    if (position.isAlm) throw new Error('ALM-managed position; not supported')
     const pool = position.pool
     if (!pool.isCl) return [ctx.tx(pool.lp, ctx.encode(abis.poolBasic, 'claimFees'))]
+    if (position.staked > 0n) throw new Error('position is staked; unstake first to claim fees')
     if (burn && position.liquidity > 0n) throw new Error('burn requires liquidity == 0; drain via withdraw first')
     return [ctx.tx(pool.nfpm, ctx.encode(abis.nfpm, 'multicall', [cleanupCalls(ctx, pool, position.id, unwrapNative, burn)]))]
   })

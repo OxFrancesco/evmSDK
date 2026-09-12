@@ -1,3 +1,4 @@
+import { TransactionNotSubmittedError } from './submission-error'
 import * as Predicate from 'effect/Predicate'
 import type { Address, Hex, TransactionReceipt } from 'viem'
 import { createPublicClient, createWalletClient, defineChain, http } from 'viem'
@@ -53,8 +54,16 @@ export function extractPlanSteps(result: SugarJson): PlanStep[] {
   })
 }
 
+export function terminalScalar(value: SugarJson | undefined): string {
+  return Array.from(String(value), character => {
+    const code = character.charCodeAt(0)
+    const control = code <= 0x1f || (code >= 0x7f && code <= 0x9f) || code === 0x61c || code === 0x200e || code === 0x200f || (code >= 0x2028 && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069)
+    return control ? `\\u${code.toString(16).padStart(4, '0')}` : character
+  }).join('')
+}
+
 const summaryLine = (label: string, value: SugarJson | undefined): string[] =>
-  value === undefined || value === null ? [] : [`  ${label}: ${Predicate.isObject(value) ? JSON.stringify(value) : String(value)}`]
+  value === undefined || value === null ? [] : [`  ${label}: ${terminalScalar(Predicate.isObject(value) ? JSON.stringify(value) : value)}`]
 
 /** Human summary shown before the confirm prompt. */
 export function renderPlanSummary(action: SugarTxAction, result: SugarJson, steps: PlanStep[]): string {
@@ -65,13 +74,13 @@ export function renderPlanSummary(action: SugarTxAction, result: SugarJson, step
     lines.push('  Stock        Current       Target')
     for (const item of record.allocation) {
       const row = asRecord(item)
-      lines.push(`  ${String(row.symbol).padEnd(12)} ${String(row.current_pct).padStart(6)}% -> ${row.target_pct}%`)
+      lines.push(`  ${terminalScalar(row.symbol).padEnd(12)} ${terminalScalar(row.current_pct).padStart(6)}% -> ${terminalScalar(row.target_pct)}%`)
     }
   }
   if (Array.isArray(record.trades)) {
     for (const item of record.trades) {
       const trade = asRecord(item)
-      lines.push(`  ${trade.amount} ${trade.from} -> ${trade.expected} ${trade.to}, minimum ${trade.minimum}`)
+      lines.push(`  ${terminalScalar(trade.amount)} ${terminalScalar(trade.from)} -> ${terminalScalar(trade.expected)} ${terminalScalar(trade.to)}, minimum ${terminalScalar(trade.minimum)}`)
     }
     if (record.trades.length === 0) lines.push('  Already balanced. No transactions needed.')
     else lines.push('  All trades execute together. A failed trade reverts the basket.')
@@ -146,13 +155,17 @@ export function localMnemonicSigner(mnemonic: string, rpcUrl?: string): PlanSign
     address: account.address,
     describe: 'local wallet',
     send: async (transaction, chainId) => {
-      const chain = chainForSettings(chainId, rpcUrl)
-      const client = createWalletClient({ account, chain, transport: http() })
-      return client.sendTransaction({
-        to: transaction.to,
-        data: transaction.data,
-        value: transaction.value,
-      })
+      let client: ReturnType<typeof createWalletClient>
+      let signed: Hex
+      try {
+        const chain = chainForSettings(chainId, rpcUrl)
+        client = createWalletClient({ account, chain, transport: http() })
+        const request = await client.prepareTransactionRequest({ account, chain, to: transaction.to, data: transaction.data, value: transaction.value })
+        signed = await client.signTransaction({ ...request, account })
+      } catch (cause) {
+        throw new TransactionNotSubmittedError('Local transaction preparation failed before broadcast', { cause })
+      }
+      return client.sendRawTransaction({ serializedTransaction: signed })
     },
   }
 }
@@ -261,6 +274,11 @@ export async function sendPlan(options: SendPlanOptions): Promise<Hex[]> {
           hash = await signer.send(step.transaction, plan.chainId)
           if (!/^0x[0-9a-f]{64}$/i.test(hash)) throw new Error('Wallet returned an invalid transaction hash')
         } catch (cause) {
+          if (cause instanceof TransactionNotSubmittedError) {
+            journal.steps[index] = { kind: 'ready' }
+            store.save(journal)
+            throw cause
+          }
           throw new Error('Submission outcome unknown; this execution is blocked until reconciled', { cause })
         }
         state = { kind: 'submitted', hash }

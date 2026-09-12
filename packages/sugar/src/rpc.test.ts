@@ -894,3 +894,34 @@ describe('Sugar RPC policy', () => {
     expect(recoveringAttempts).toBe(2)
   })
 })
+
+test('resolved multicall transport failures retry, missing contracts fall back, and route reverts stay skipped', async () => {
+  const { fromToken, rawPool, toToken } = quoteFixture()
+  for (const kind of ['rate-limit', 'missing-multicall', 'route-revert'] as const) {
+    let attempts = 0
+    let direct = 0
+    const sugar = new SugarClient(10, {
+      publicClient: stubPublicClient({
+        multicall: async () => {
+          attempts++
+          if (kind === 'rate-limit' && attempts > 1) return [{ status: 'success', result: [111n] }]
+          const error = kind === 'rate-limit'
+            ? new HttpRequestError({ body: { method: 'eth_call' }, status: 429, url: 'https://rpc.example.invalid' })
+            : Object.assign(new Error(kind), { name: kind === 'route-revert' ? 'ContractFunctionRevertedError' : 'ContractFunctionZeroDataError', functionName: kind === 'route-revert' ? 'quoteExactInput' : 'aggregate3' })
+          return [{ status: 'failure', error }]
+        },
+        readContract: async request => {
+          if (request.functionName === 'count') return 1n
+          if (request.functionName === 'forSwaps') return Number(request.args?.[1]) === 0 ? [rawPool] : []
+          if (request.functionName === 'quoteExactInput') { direct++; return [111n] }
+          throw new Error(`Unexpected read: ${request.functionName}`)
+        },
+      }),
+      rpcPolicy: { baseDelayMs: 0, deadlineMs: 1000, maxRetries: 1 },
+    })
+    const quote = await sugar.getQuote(fromToken, toToken, 10n)
+    expect(quote?.amountOut).toBe(kind === 'route-revert' ? undefined : 111n)
+    expect(attempts).toBe(kind === 'rate-limit' ? 2 : 1)
+    expect(direct).toBe(kind === 'missing-multicall' ? 1 : 0)
+  }
+})

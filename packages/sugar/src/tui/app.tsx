@@ -1,6 +1,6 @@
 import { StocksScreen, IndicesScreen, IndexEditorScreen } from './screens/stocks'
 import { useKeyboard } from '@opentui/react'
-import { useEffect } from 'react'
+import { Fragment, useEffect } from 'react'
 import { SUPPORTED_CHAIN_IDS } from '../config'
 import { SUGAR_ACTIONS, isSugarTxAction } from '../contracts'
 import { warmChain } from './sugar'
@@ -81,7 +81,7 @@ export function App() {
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.background}>
       {screen}
-      {topDialog ? topDialog.node : null}
+      {topDialog ? <Fragment key={topDialog.id}>{topDialog.node}</Fragment> : null}
       <Toasts />
     </box>
   )

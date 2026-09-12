@@ -48,13 +48,14 @@ describe('route planner parity', () => {
       amountOut: 456n,
     }
     const data = buildSuperSwapData({
+      originAmount: 100n,
       fromToken: fromBridgeToken,
       toToken: destinationToken,
       fromBridgeToken,
       toBridgeToken,
       account,
       userIca: '0x1111111111111111111111111111111111111111',
-      userIcaBalance: 0n,
+      userIcaBalance: 23n,
       originDomain: 1135,
       originBridge: '0x2222222222222222222222222222222222222222',
       originHook: '0x3333333333333333333333333333333333333333',
@@ -73,6 +74,7 @@ describe('route planner parity', () => {
       parseAbiParameters('uint8,address,address,address,uint256,uint256,uint32,bool'),
       data.destinationPlanner.inputs[0],
     )
-    expect(decoded[4]).toBe(123n)
+    expect(decoded[4]).toBe(100n)
+    expect(decoded[7]).toBe(true)
   })
 })

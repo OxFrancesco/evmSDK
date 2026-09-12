@@ -1,4 +1,5 @@
-import { join } from 'node:path'
+import { TransactionNotSubmittedError, isExplicitWalletRejection } from './submission-error'
+import { prepareWalletConnectStorage, protectWalletConnectWrites } from './walletconnect-storage'
 import * as Schema from 'effect/Schema'
 import { normalizeAddress } from './helpers'
 import { walletConnectSessionRecord } from './walletconnect-session'
@@ -22,7 +23,7 @@ import {
 const METADATA = {
   name: 'BeeGreat aero CLI (unofficial)',
   description: 'Independent CLI. Not affiliated with or endorsed by Aerodrome Finance, Velodrome Finance, or Dromos Labs.',
-  url: 'https://github.com/OxFrancesco/aerodrome-sdk-ts',
+  url: 'https://github.com/OxFrancesco/UNOFFICIAL-Aero-SDK',
   icons: [],
 }
 
@@ -40,10 +41,12 @@ let invalidatedTopic: string | undefined
 
 function initSignClient(): Promise<SignClientInstance> {
   if (sharedClient) return sharedClient
+  const storageDirectory = prepareWalletConnectStorage(walletDir())
   sharedClient = import('@walletconnect/sign-client').then(({ SignClient }) => SignClient.init({
     projectId: walletConnectProjectId(), metadata: METADATA,
-    storageOptions: { database: join(walletDir(), 'walletconnect') },
+    storageOptions: { database: storageDirectory },
   })).then((client) => {
+    protectWalletConnectWrites(client.core.storage, storageDirectory)
     const clear = ({ topic }: { topic: string }) => {
       if (loadWalletConnectRecord()?.topic === topic) deleteWalletConnectRecord()
       if (invalidatedTopic === topic) invalidatedTopic = undefined
@@ -117,17 +120,24 @@ export async function walletConnectSendTransaction(
   chainId: number,
   log: (line: string) => void = console.log,
 ): Promise<Hex> {
-  const record = loadWalletConnectRecord()
-  if (!record) throw new Error('no WalletConnect session; run: wallet connect')
-  const client = await initSignClient()
-  const session = client.session.getAll().find((item) => item.topic === record.topic)
-  if (!session) {
-    deleteWalletConnectRecord()
-    throw new Error('the WalletConnect session expired; run: wallet connect')
-  }
-  if (normalizeAddress(transaction.from) !== normalizeAddress(record.address)) throw new Error('WalletConnect account differs from the reviewed sender')
-  const current = walletConnectSessionRecord(session, chainId, transaction.from)
-  saveWalletConnectRecord(current)
+  const { record, client } = await (async () => {
+    try {
+      const record = loadWalletConnectRecord()
+      if (!record) throw new Error('no WalletConnect session; run: wallet connect')
+      const client = await initSignClient()
+      const session = client.session.getAll().find((item) => item.topic === record.topic)
+      if (!session) {
+        deleteWalletConnectRecord()
+        throw new Error('the WalletConnect session expired; run: wallet connect')
+      }
+      if (normalizeAddress(transaction.from) !== normalizeAddress(record.address)) throw new Error('WalletConnect account differs from the reviewed sender')
+      const current = walletConnectSessionRecord(session, chainId, transaction.from)
+      saveWalletConnectRecord(current)
+      return { record, client }
+    } catch (cause) {
+      throw new TransactionNotSubmittedError(cause instanceof Error ? cause.message : 'Wallet is unavailable before submission', { cause })
+    }
+  })()
   log('Approve the transaction in your wallet...')
   const hash = await client.request<unknown>({
     topic: record.topic,
@@ -141,6 +151,9 @@ export async function walletConnectSendTransaction(
         value: `0x${transaction.value.toString(16)}`,
       }],
     },
+  }).catch((cause: unknown) => {
+    if (isExplicitWalletRejection(cause)) throw new TransactionNotSubmittedError('The wallet rejected this transaction. No transaction was submitted for this step.', { cause })
+    throw cause
   })
   const parsed = Schema.decodeUnknownSync(Schema.String.check(Schema.isPattern(/^0x[0-9a-f]{64}$/i)))(hash)
   return `0x${parsed.slice(2)}`

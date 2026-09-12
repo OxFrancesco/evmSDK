@@ -232,7 +232,7 @@ export function buildSuperSwapData(input: SuperSwapDataInput): SuperSwapData {
     needsRelay ? input.userIca : input.account,
     fromBridgeTokenAddress,
     input.originBridge,
-    startsWithBridgeToken ? input.destinationQuote!.input.amountIn : CONTRACT_BALANCE,
+    startsWithBridgeToken ? input.originAmount : CONTRACT_BALANCE,
     input.bridgeFee,
     input.destinationDomain,
     startsWithBridgeToken,

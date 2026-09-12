@@ -631,10 +631,10 @@ function TokenTab(props: { report?: AnalyticsReport; wide: boolean; chartWidth: 
   const onchain = props.report?.onchain
   const settled = onchain?.settled
   const mcap = llama?.mcap ?? (ve && ve.price > 0 ? ve.tokenSupply * ve.price : 0)
-  const realYield = ve && ve.votingPower > 0 && settled && settled.revenue > 1_000
+  const annualIncomePerVe = ve && ve.votingPower > 0 && settled && settled.revenue > 1_000
     ? (settled.revenue / ve.votingPower) * 52
     : undefined
-  const per10k = realYield === undefined ? undefined : realYield * 10_000
+  const per10k = annualIncomePerVe === undefined ? undefined : annualIncomePerVe * 10_000
   const annualFees = (llama?.fees30d ?? 0) * 12
   return (
     <box flexDirection={props.wide ? 'row' : 'column'} gap={1}>
@@ -665,7 +665,7 @@ function TokenTab(props: { report?: AnalyticsReport; wide: boolean; chartWidth: 
             </text>
             <text fg={theme.textMuted}>spot {formatUsd(ve.price)}</text>
             <text fg={theme.text}>
-              real yield {realYield === undefined ? '—' : `${(realYield * 100).toFixed(1)}%`}
+              income / ve / yr {annualIncomePerVe === undefined ? '—' : formatUsd(annualIncomePerVe)}
               {per10k === undefined ? '' : `   ${formatUsd(per10k)} / 10k ve / yr`}
             </text>
           </box>

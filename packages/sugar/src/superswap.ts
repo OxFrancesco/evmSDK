@@ -185,6 +185,7 @@ export class Superswap {
     ])
     const effectiveSlippage = slippage ?? fromClient.settings.swapSlippage
     const swapData = buildSuperSwapData({
+      originAmount: quote.amountIn,
       fromToken: quote.fromToken, toToken: quote.toToken,
       fromBridgeToken: quote.fromBridgeToken, toBridgeToken: quote.toBridgeToken,
       account: fromClient.account, userIca, userIcaBalance, originDomain,

@@ -219,42 +219,73 @@ export function constantTimeEquals(left: string, right: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b)
 }
 
-/** Read one line from the terminal; `hidden` suppresses echo (passphrases, mnemonics). */
+let promptActive = false
+let pendingPromptInput = ''
+
+/** Read one line without transferring ownership of the process input stream. */
 export async function promptLine(label: string, hidden = false): Promise<string> {
   const stdin = process.stdin
   const stdout = process.stdout
   if (!stdin.isTTY) throw new Error('this command needs an interactive terminal')
+  if (promptActive) throw new Error('another terminal prompt is active')
+  promptActive = true
+  const wasRaw = stdin.isRaw
   stdout.write(label)
   stdin.setRawMode(true)
-  stdin.resume()
   try {
-    let value = ''
-    const decoder = new TextDecoder()
-    // SAFETY: a resumed raw-mode TTY ReadStream async-iterates Buffer chunks.
-    for await (const chunk of stdin as AsyncIterable<Buffer>) {
-      for (const char of decoder.decode(chunk, { stream: true })) {
-        const byte = char.codePointAt(0)
-        if (byte === 0x03) throw new Error('cancelled')
-        if (byte === 0x0d || byte === 0x0a) {
-          stdout.write('\n')
-          return value
-        }
-        if (byte === 0x7f || byte === 0x08) {
-          if (value.length > 0) {
-            value = Array.from(value).slice(0, -1).join('')
-            if (!hidden) stdout.write('\b \b')
-          }
-          continue
-        }
-        if (byte === undefined || byte < 0x20) continue
-        value += char
-        stdout.write(hidden ? '' : char)
+    return await new Promise<string>((resolve, reject) => {
+      let value = ''
+      const decoder = new TextDecoder()
+      const cleanup = () => {
+        stdin.off('data', onData)
+        stdin.off('error', onError)
+        stdin.off('end', onEnd)
       }
-    }
-    return value
+      const finish = (error?: Error) => {
+        cleanup()
+        if (error) reject(error)
+        else { stdout.write('\n'); resolve(value) }
+      }
+      const consume = (text: string) => {
+        const chars = Array.from(text)
+        for (let i = 0; i < chars.length; i++) {
+          const char = chars[i]!
+          const byte = char.codePointAt(0)!
+          if (byte === 0x03) { pendingPromptInput = ''; finish(new Error('cancelled')); return }
+          if (byte === 0x0d || byte === 0x0a) {
+            const start = byte === 0x0d && chars[i + 1] === '\n' ? i + 2 : i + 1
+            pendingPromptInput = chars.slice(start).join('')
+            finish()
+            return
+          }
+          if (byte === 0x7f || byte === 0x08) {
+            if (value.length > 0) {
+              value = Array.from(value).slice(0, -1).join('')
+              if (!hidden) stdout.write('\b \b')
+            }
+          } else if (byte >= 0x20) {
+            value += char
+            if (!hidden) stdout.write(char)
+          }
+        }
+      }
+      const onData = (chunk: Buffer) => consume(decoder.decode(chunk, { stream: true }))
+      const onError = (error: Error) => finish(error)
+      const onEnd = () => finish(new Error('terminal input ended'))
+      stdin.on('data', onData)
+      stdin.once('error', onError)
+      stdin.once('end', onEnd)
+      stdin.resume()
+      if (pendingPromptInput) {
+        const pending = pendingPromptInput
+        pendingPromptInput = ''
+        consume(pending)
+      }
+    })
   } finally {
-    stdin.setRawMode(false)
+    stdin.setRawMode(wasRaw)
     stdin.pause()
+    promptActive = false
   }
 }
 

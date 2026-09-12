@@ -108,9 +108,15 @@ export function isTransientRpcFailure(cause: unknown): boolean {
 
 type RpcClassification = { code: SugarRpcErrorCode; retryable: boolean }
 
+export function isContractRevert(cause: unknown, functionName?: string): boolean {
+  const chain = errorChain(cause)
+  return chain.some(error => errorName(error) === 'ContractFunctionRevertedError')
+    && (functionName === undefined || chain.some(error => Predicate.isObject(error) && 'functionName' in error && error.functionName === functionName))
+}
+
 function classifyRpcError(cause: unknown): RpcClassification {
   const chain = errorChain(cause)
-  if (chain.some((error) => errorName(error) === 'ContractFunctionRevertedError')) {
+  if (isContractRevert(cause)) {
     return { code: 'RPC_READ_FAILED', retryable: false }
   }
 

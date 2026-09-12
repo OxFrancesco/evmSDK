@@ -392,6 +392,7 @@ export type SuperswapPlan = {
 export type RoutePlan = { commands: Hex; inputs: Hex[] }
 
 export type SuperSwapDataInput = {
+  originAmount: bigint
   fromToken: Token
   toToken: Token
   fromBridgeToken: Token

@@ -27,17 +27,17 @@ const MENU: MenuItem[] = [
 /** Live DefiLlama pulse under the logo; hidden entirely until data lands. */
 function LiveStats() {
   const chain = useApp().chain
-  const [stats, setStats] = useState<{ tvl?: number; fees24h?: number; volume24h?: number }>({})
+  const [stats, setStats] = useState<{ chain: number; tvl?: number; fees24h?: number; volume24h?: number }>()
   useEffect(() => {
     let cancelled = false
     fetchTuiLlama(chain).then((llama) => {
-      if (!cancelled && llama) setStats({ tvl: llama.tvlNow, fees24h: llama.fees24h, volume24h: llama.volume24h })
-    }).catch(() => undefined)
+      if (!cancelled) setStats(llama ? { chain, tvl: llama.tvlNow, fees24h: llama.fees24h, volume24h: llama.volume24h } : undefined)
+    }).catch(() => { if (!cancelled) setStats(undefined) })
     return () => {
       cancelled = true
     }
   }, [chain])
-  if (stats.tvl === undefined && stats.fees24h === undefined) return null
+  if (stats?.chain !== chain || (stats.tvl === undefined && stats.fees24h === undefined)) return null
   return (
     <box flexShrink={0} flexDirection="row" gap={2} justifyContent="center">
       {stats.tvl !== undefined ? <text fg={theme.text}>TVL <span fg={theme.success}>{formatUsd(stats.tvl)}</span></text> : null}
