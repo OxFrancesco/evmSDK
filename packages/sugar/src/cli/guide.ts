@@ -24,9 +24,8 @@ const GUIDES = {
   'getting-started': `Getting started with aero
 =========================
 
-⚠️  aero is vibecoded and in EARLY BETA — use it at your own risk. Review
-every plan with --dry-run before signing, start with small amounts, and
-never risk funds you cannot afford to lose.
+aero is in early beta. Review every plan with --dry-run before signing,
+start with small amounts, and never risk funds you cannot afford to lose.
 
 aero talks to Aerodrome (Base) and Velodrome (OP Superchain) straight from
 your terminal. Reads print JSON; transaction commands build an unsigned plan
@@ -38,9 +37,9 @@ A five-minute tour:
        Look around. No wallet needed for reads.
   2. aero quote --from-token ETH --to-token USDC --amount 0.05 --use-decimals
        Price a swap, including route and price impact.
-  3. aero wallet connect
-       Pair your mobile/extension wallet via WalletConnect (or
-       'aero wallet create' for a local encrypted wallet).
+  3. aero wallet connect --browser
+       Select Rabby or another browser extension. For QR pairing with a
+       compatible wallet, use 'aero wallet connect' without --browser.
   4. aero swap --from-token ETH --to-token USDC --amount 0.05 --use-decimals
        Review the plan summary, confirm, approve in your wallet.
 
@@ -57,11 +56,18 @@ Next: aero guide wallet | swap | liquidity | staking | rewards | venft | analyti
   wallet: `Wallets
 =======
 
-Two ways to sign:
+Choose how to sign:
 
-  WalletConnect (recommended)   aero wallet connect
-    Scan the QR (or paste the wc: URI) with Rabby, Rainbow, MetaMask, or a
-    Safe. Every transaction is approved inside your wallet app; aero never
+  Browser wallet                aero wallet connect --browser
+    Opens a local page. Choose Rabby or another detected extension and
+    approve the connection. CLI transactions reopen the browser for the
+    selected account. In aero tui, choose Wallet → Connect browser wallet
+    and keep the tab open to reuse the connection across actions.
+    Escape cancels pairing. Disconnect is available in the page and TUI.
+
+  WalletConnect                 aero wallet connect
+    Scan the QR or paste the wc: URI into a compatible wallet.
+    Every transaction is approved inside your wallet app; aero never
     sees a private key.
 
   Local encrypted wallet        aero wallet create | aero wallet restore
@@ -73,10 +79,11 @@ Two ways to sign:
 Housekeeping:
 
   aero wallet status       who is connected, and on which chains
-  aero wallet disconnect   drop the WalletConnect session
+  aero wallet disconnect   disconnect the external wallet
   aero wallet remove       delete the local encrypted wallet
 
-When both exist, WalletConnect wins (pairing is an explicit recent action).
+An explicitly selected external wallet takes precedence over a local wallet.
+Browser and WalletConnect approvals are required even when using --yes.
 Transaction commands use the connected wallet automatically when --wallet is
 omitted; passing a different --wallet prints an unsigned plan instead.`,
 
@@ -282,12 +289,12 @@ Sugar and DefiLlama work without a key.
                TVL-mix donut, 16-week activity heatmap
   2 flywheel   RPV ($ / 10k ve voted), bribe ROI, epoch waterfall
                (fees + bribes - emissions), three-doors on the same $10k
-  3 trade      ranked pools (v volume / f fees / e efficiency / p RPV),
+  3 trade      ranked pools (o picks the sort: TVL, volume, fees, efficiency, RPV),
                liquidity map (turnover x TVL scatter), weekly volume
   4 token      locked-vs-liquid supply donut, real yield, P/S and P/F
   5 arena      Aerodrome vs Uniswap vs Pancake from Dune dex.trades
 
-Keys: ← → or 1-5 to change tab, ctrl+r to refresh, enter on a ranked
+Keys: ← → or 1-5 to change tab, o to sort, ctrl+r to refresh, enter on a ranked
 row for that pool's epoch history. Dune coverage is Base (Aerodrome);
 other Superchain leaves show the on-chain snapshot only.
 

@@ -93,8 +93,9 @@ export function chainLabel(chainId: number): string {
 
 export function StatusBar(props: { hints: { key: string; label: string }[] }) {
   const { chain, wallet } = useApp()
+  const stacked = useTerminalDimensions().width < 110
   return (
-    <box height={1} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2} flexShrink={0}>
+    <box height={stacked ? 2 : 1} flexDirection={stacked ? 'column' : 'row'} justifyContent="space-between" paddingLeft={2} paddingRight={2} flexShrink={0}>
       <KeyHints hints={props.hints} />
       <box flexDirection="row" gap={2} flexShrink={0}>
         <text fg={theme.text}>
@@ -103,7 +104,7 @@ export function StatusBar(props: { hints: { key: string; label: string }[] }) {
         {wallet ? (
           <text fg={theme.text}>
             <span fg={theme.success}>●</span> {shortAddress(wallet.address)}
-            <span fg={theme.textMuted}> {wallet.source === 'walletconnect' ? (wallet.peer ?? 'walletconnect') : 'local'}</span>
+            <span fg={theme.textMuted}> {wallet.source === 'local' ? 'local' : (wallet.peer ?? 'walletconnect')}</span>
           </text>
         ) : (
           <text fg={theme.textMuted}>

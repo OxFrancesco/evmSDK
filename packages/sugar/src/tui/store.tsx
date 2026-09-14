@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { SugarAction, SugarParameters } from '../contracts'
-import { getActiveWallet, type ActiveWallet } from '../wallet'
+import { getActiveWallet, onWalletChange, type ActiveWallet } from '../wallet'
 import { DEFAULT_CHAIN } from '../cli/flags'
 
 export type Route =
@@ -36,6 +36,9 @@ type AppState = {
   setChain: (chain: number) => void
   wallet: ActiveWallet | undefined
   refreshWallet: () => void
+  /** True while transactions are being signed and broadcast; quitting asks twice. */
+  busy: boolean
+  setBusy: (busy: boolean) => void
   quit: () => void
 }
 
@@ -52,6 +55,7 @@ export function AppProvider(props: { onQuit: () => void; children: ReactNode }) 
   const [dialogs, setDialogs] = useState<DialogEntry[]>([])
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [chain, setChain] = useState(DEFAULT_CHAIN)
+  const [busy, setBusy] = useState(false)
   const [wallet, setWallet] = useState<ActiveWallet | undefined>(() => {
     try {
       return getActiveWallet()
@@ -86,6 +90,8 @@ export function AppProvider(props: { onQuit: () => void; children: ReactNode }) 
     }
   }, [])
 
+  useEffect(() => onWalletChange(refreshWallet), [refreshWallet])
+
   const value = useMemo<AppState>(() => ({
     routes,
     route: routes[routes.length - 1],
@@ -102,8 +108,10 @@ export function AppProvider(props: { onQuit: () => void; children: ReactNode }) 
     setChain,
     wallet,
     refreshWallet,
+    busy,
+    setBusy,
     quit: props.onQuit,
-  }), [routes, push, pop, replace, dialogs, openDialog, closeDialog, toasts, toast, chain, wallet, refreshWallet, props.onQuit])
+  }), [routes, push, pop, replace, dialogs, openDialog, closeDialog, toasts, toast, chain, wallet, refreshWallet, busy, props.onQuit])
 
   return <AppContext.Provider value={value}>{props.children}</AppContext.Provider>
 }

@@ -5,7 +5,7 @@ import * as Effect from 'effect/Effect'
 import type { Address } from 'viem'
 import { abis } from './abis'
 import { normalizeAddress } from './helpers'
-import { makeSharedReadCache, sharedCacheGet } from './internal/caches'
+import { sharedCacheGet, type SharedLookup } from './internal/caches'
 import type { SugarContext } from './internal/context'
 import { clientCall } from './internal/interop'
 import { paginate } from './internal/pagination'
@@ -38,19 +38,19 @@ export const getUserIcaBalance = Effect.fn('Sugar.Tokens.getUserIcaBalance')(fun
   return yield* clientCall(() => ctx.client.balanceOf(ctx.settings.bridgeTokenAddress, userIca))
 })
 
+export const tokenCatalogLookup: SharedLookup<'catalog', Token[]> = (active, _key) =>
+  paginate(active, 'tokens', (limit, offset) => active.readTask<unknown[]>(
+    active.settings.sugarContractAddress,
+    abis.sugar,
+    'tokens',
+    [limit, offset, ADDRESS_ZERO, []],
+  )).pipe(Effect.map((raw) => prepareTokens(raw, active.settings)))
+
 export const getAllTokens = Effect.fn('Sugar.Tokens.getAllTokens')(function* (
   ctx: SugarContext,
   listedOnly = false,
 ) {
-  const cache = ctx.caches.tokenCache ??= yield* makeSharedReadCache(ctx.caches, (active, _key: 'catalog') =>
-    paginate(active, 'tokens', (limit, offset) => active.readTask<unknown[]>(
-      active.settings.sugarContractAddress,
-      abis.sugar,
-      'tokens',
-      [limit, offset, ADDRESS_ZERO, []],
-    )).pipe(Effect.map((raw) => prepareTokens(raw, active.settings))),
-  )
-  const tokens = yield* sharedCacheGet(ctx, cache, 'catalog')
+  const tokens = yield* sharedCacheGet(ctx, ctx.readCaches.tokens, 'catalog')
   return listedOnly ? tokens.filter((token, index) => index === 0 || token.listed) : tokens
 })
 

@@ -111,6 +111,8 @@ export async function connectWalletConnect(
   log('Waiting for wallet approval...')
   const session = await approval()
   const record = walletConnectSessionRecord(session, chainId)
+  const { disconnectBrowserWallet } = await import('./browser-wallet')
+  disconnectBrowserWallet()
   saveWalletConnectRecord(record)
   return record
 }

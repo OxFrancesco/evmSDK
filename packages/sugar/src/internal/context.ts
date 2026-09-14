@@ -1,8 +1,8 @@
-import type * as Cache from 'effect/Cache'
 import type * as Effect from 'effect/Effect'
 import type { Abi, Address, Hex, PublicClient } from 'viem'
 import type { SugarClient } from '../client'
 import type { SugarRpcError } from '../errors'
+import type { SugarCacheHandles } from './caches'
 import type { RpcDeadline, RpcReadExecutor, RpcReadTask } from './rpc-executor'
 import type {
   ChainSettings,
@@ -10,7 +10,6 @@ import type {
   SugarPoolLocatorStore,
   SugarRpcEvent,
   UnsignedTransaction,
-  VeNftContracts,
 } from '../types'
 
 export type ReadArgs = readonly unknown[] | undefined
@@ -38,10 +37,8 @@ export interface SugarContext {
   readonly publicClient: PublicClient
   readonly rpc: RpcReadExecutor
   readonly caches: SugarClientCaches
+  readonly readCaches: SugarCacheHandles
   readonly poolLocatorStore?: SugarPoolLocatorStore
-  /** Verified pool-offset lookups, deduped per client; failures are not cached. */
-  readonly resolvedPoolLocators: Cache.Cache<string, ResolvedPoolLocator | undefined, SugarRpcError>
-  veNftContractsCache?: Cache.Cache<'contracts', VeNftContracts, SugarRpcError>
   readTask<T>(address: Address, abi: Abi, functionName: string, args?: ReadArgs): RpcReadTask<T>
   read<T>(
     address: Address,

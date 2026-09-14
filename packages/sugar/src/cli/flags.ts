@@ -1,5 +1,7 @@
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as Flag from 'effect/unstable/cli/Flag'
+import { CHAIN_PARAMETER, WALLET_PARAMETER, type ParameterSpec } from '../action-schema'
 import type { SugarParameter, SugarParameters } from '../contracts'
 
 /** Default chain for every command: Base, home of Aerodrome. */
@@ -7,61 +9,13 @@ export const DEFAULT_CHAIN = 8453
 
 export const chain = Flag.integer('chain').pipe(
   Flag.withDefault(DEFAULT_CHAIN),
-  Flag.withDescription('Chain id (defaults to 8453 — Base, home of Aerodrome)'),
+  Flag.withDescription(CHAIN_PARAMETER.description),
 )
 
 export const wallet = Flag.string('wallet').pipe(
   Flag.optional,
   Flag.withMetavar('<0x address>'),
-  Flag.withDescription('Wallet address (defaults to the connected wallet)'),
-)
-
-export const pool = Flag.string('pool').pipe(
-  Flag.optional,
-  Flag.withMetavar('<0x address>'),
-  Flag.withDescription('Pool (liquidity pair) address'),
-)
-
-export const position = Flag.string('position').pipe(
-  Flag.optional,
-  Flag.withMetavar('<id>'),
-  Flag.withDescription('Position id (list yours with: aero positions)'),
-)
-
-export const poolType = Flag.choice('pool-type', ['cl', 'stable', 'volatile']).pipe(
-  Flag.optional,
-  Flag.withDescription('Filter or select the pool flavor'),
-)
-
-export const fromToken = Flag.string('from-token').pipe(
-  Flag.optional,
-  Flag.withMetavar('<symbol|0x address>'),
-  Flag.withDescription('Token you pay with (symbol like ETH/USDC, or address; omitted interactively opens a fuzzy token finder)'),
-)
-
-export const toToken = Flag.string('to-token').pipe(
-  Flag.optional,
-  Flag.withMetavar('<symbol|0x address>'),
-  Flag.withDescription('Token you receive (symbol like ETH/USDC, or address; omitted interactively opens a fuzzy token finder)'),
-)
-
-export const amount = Flag.string('amount').pipe(
-  Flag.withMetavar('<amount>'),
-  Flag.withDescription('Amount to use (raw units, or decimals with --use-decimals)'),
-)
-
-export const useDecimals = Flag.boolean('use-decimals').pipe(
-  Flag.withDescription('Read amounts as human units (0.1 ETH) instead of raw wei'),
-)
-
-export const slippage = Flag.float('slippage').pipe(
-  Flag.optional,
-  Flag.withDescription('Slippage tolerance between 0 and 1 (0.01 = 1%)'),
-)
-
-export const deadlineMinutes = Flag.integer('deadline-minutes').pipe(
-  Flag.optional,
-  Flag.withDescription('Transaction deadline in minutes (default 30)'),
+  Flag.withDescription(WALLET_PARAMETER.description),
 )
 
 export const yes = Flag.boolean('yes').pipe(
@@ -73,30 +27,64 @@ export const dryRun = Flag.boolean('dry-run').pipe(
   Flag.withDescription('Always print the unsigned plan, never broadcast'),
 )
 
-export const token0 = Flag.string('token0').pipe(
-  Flag.optional,
-  Flag.withMetavar('<symbol|0x address>'),
-  Flag.withDescription('First pool token (symbol or address)'),
-)
+/** What a generated flag hands the handler: a value, or `Option` for optional flags. */
+export type FlagValue = SugarParameter | Option.Option<SugarParameter>
 
-export const token1 = Flag.string('token1').pipe(
-  Flag.optional,
-  Flag.withMetavar('<symbol|0x address>'),
-  Flag.withDescription('Second pool token (symbol or address)'),
-)
+function metavar(spec: ParameterSpec): string {
+  if (spec.kind === 'address') return '<0x address>'
+  if (spec.kind === 'token') return '<symbol|0x address>'
+  return `<${spec.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}>`
+}
 
-export const burn = Flag.boolean('burn').pipe(
-  Flag.withDescription('Burn the emptied CL position NFT'),
-)
+/**
+ * One `--flag` per schema parameter. Booleans the action layer defaults to
+ * on become `--no-<name>` (only an explicit opt-out is sent); everything else
+ * is optional unless the schema marks it required. Tokens remain optional here
+ * so the interactive picker can resolve them before request validation.
+ */
+export function flagFor(spec: ParameterSpec): Flag.Flag<FlagValue> {
+  const name = spec.name.replaceAll('_', '-')
+  if (spec.kind === 'boolean') {
+    return spec.default
+      ? Flag.boolean(`no-${name}`).pipe(Flag.withDescription(`Don't ${spec.description.charAt(0).toLowerCase()}${spec.description.slice(1)}`))
+      : Flag.boolean(name).pipe(Flag.withDescription(spec.description))
+  }
+  const typed: Flag.Flag<SugarParameter> = spec.kind === 'choice' && spec.choices
+    ? Flag.choice(name, spec.choices)
+    : spec.kind === 'integer'
+      ? Flag.integer(name)
+      : spec.kind === 'number'
+        ? Flag.float(name)
+        : Flag.string(name).pipe(Flag.withMetavar(metavar(spec)))
+  const described = typed.pipe(Flag.withDescription(spec.description))
+  return spec.required && spec.kind !== 'token' ? described : Flag.optional(described)
+}
 
-export const unwrapNative = Flag.boolean('unwrap-native').pipe(
-  Flag.withDescription('Unwrap the wrapped native leg back to the native token'),
-)
+/** Build the flag record for a parameter list, keyed by parameter name. */
+export function flagsFor(specs: readonly ParameterSpec[]): Record<string, Flag.Flag<FlagValue>> {
+  return Object.fromEntries(specs.map((spec) => [spec.name, flagFor(spec)]))
+}
 
-/** `collect` defaults to true server-side, so only an explicit opt-out is sent. */
-export const noCollect = Flag.boolean('no-collect').pipe(
-  Flag.withDescription('Skip collecting owed fees while withdrawing (CL only)'),
-)
+/**
+ * Turn parsed flags back into Sugar parameters: unwrap options, drop unset
+ * values, and translate `--no-<name>` into an explicit `false` so the shared
+ * validator sees exactly what the user passed.
+ */
+export function parametersFrom(specs: readonly ParameterSpec[], config: Record<string, FlagValue>): SugarParameters {
+  const output: SugarParameters = {}
+  for (const spec of specs) {
+    const raw = config[spec.name]
+    const value = Option.isOption(raw) ? Option.getOrUndefined(raw) : raw
+    if (spec.kind === 'boolean') {
+      if (spec.default) {
+        if (value === true) output[spec.name] = false
+      } else if (value === true) output[spec.name] = true
+      continue
+    }
+    if (Predicate.isString(value) || Predicate.isNumber(value)) output[spec.name] = value
+  }
+  return output
+}
 
 /** Drop unset flags so the shared validator sees exactly what the user passed. */
 export function definedParameters(entries: Record<string, SugarParameter | undefined>): SugarParameters {

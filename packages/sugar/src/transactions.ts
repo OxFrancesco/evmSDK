@@ -15,7 +15,7 @@ import {
   tokenContractAddress,
   tupleValues,
 } from './helpers'
-import { makeSharedReadCache, sharedCacheGet } from './internal/caches'
+import { sharedCacheGet, type SharedLookup } from './internal/caches'
 import type { SugarContext } from './internal/context'
 import { clientCall } from './internal/interop'
 import { createPoolSpec, validateDepositQuote } from './models'
@@ -180,13 +180,13 @@ export const swapBasketFromQuotes = Effect.fn('Sugar.Transactions.swapBasketFrom
   ]))]
 })
 
+export const permit2AddressLookup: SharedLookup<'permit2', Address> = (active, _key) =>
+  active.read<Address>(active.settings.swapperContractAddress, abis.swapper, 'PERMIT2')
+
 const getPermit2Address = Effect.fn('Sugar.Transactions.getPermit2Address')(function* (
   ctx: SugarContext,
 ) {
-  const cache = ctx.caches.permit2AddressCache ??= yield* makeSharedReadCache(ctx.caches, (active, _key: 'permit2') =>
-    active.read<Address>(active.settings.swapperContractAddress, abis.swapper, 'PERMIT2'),
-  )
-  return yield* sharedCacheGet(ctx, cache, 'permit2')
+  return yield* sharedCacheGet(ctx, ctx.readCaches.permit2Address, 'permit2')
 })
 
 const permit2Approvals = Effect.fn('Sugar.Transactions.permit2Approvals')(function* (

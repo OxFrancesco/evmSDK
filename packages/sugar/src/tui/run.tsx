@@ -6,7 +6,8 @@ import { stopTuiWorker } from './sugar'
 
 /**
  * Boot the full-screen TUI and resolve once the user quits, so the `aero tui`
- * subcommand can hold the CLI runtime open for the whole session.
+ * subcommand can hold the CLI runtime open for the whole session. ctrl+c is
+ * handled inside `App` so a running broadcast can ask for a second press.
  */
 export async function runAeroTui(): Promise<void> {
   const renderer = await createCliRenderer({
@@ -24,9 +25,6 @@ export async function runAeroTui(): Promise<void> {
       renderer.destroy()
       resolve()
     }
-    renderer.keyInput.on('keypress', (key: { ctrl?: boolean; name?: string }) => {
-      if (key.ctrl && key.name === 'c') quit()
-    })
     root.render(
       <AppProvider onQuit={quit}>
         <App />

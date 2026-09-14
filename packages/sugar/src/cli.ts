@@ -4,6 +4,7 @@
 // Upstream portions are licensed under Apache-2.0. See ../LICENSE.Apache-2.0 and ../NOTICE.
 
 import * as Predicate from 'effect/Predicate'
+import { requestParameters, type ParameterKind } from './action-schema'
 import { executeSugarAction, type SugarExecutionOptions } from './actions'
 import { isSugarAction, SUGAR_ACTIONS, type SugarAction, type SugarParameter, type SugarParameters } from './contracts'
 
@@ -14,16 +15,10 @@ import { isSugarAction, SUGAR_ACTIONS, type SugarAction, type SugarParameter, ty
  * that feed argv-style requests straight into executeSugarAction.
  */
 
-const BOOLEAN_FLAGS = new Set(['burn', 'collect', 'full', 'unwrap_native', 'use_decimals'])
-const NUMBER_FLAGS = new Set([
-  'chain', 'deadline_minutes', 'initial_price', 'limit', 'lock_duration_seconds', 'offset',
-  'price_lower', 'price_upper', 'slippage', 'tick_lower', 'tick_spacing', 'tick_upper',
-])
-
 export const SUGAR_CLI_HELP = `Usage: sugar-ts <action> [--flag=value]
 
-⚠️  Vibecoded & early beta — use at your own risk. Review every unsigned
-plan before signing and never risk funds you cannot afford to lose.
+Early beta. Review every unsigned plan before signing and never risk funds
+you cannot afford to lose.
 
 Actions: ${SUGAR_ACTIONS.map((action) => action.replaceAll('_', '-')).join(', ')}
 
@@ -41,9 +36,9 @@ function parseBoolean(name: string, value: string): boolean {
   throw new Error(`--${name.replaceAll('_', '-')} must be true or false`)
 }
 
-function coerceFlag(name: string, value: string): SugarParameter {
-  if (BOOLEAN_FLAGS.has(name)) return parseBoolean(name, value)
-  if (NUMBER_FLAGS.has(name)) {
+function coerceFlag(name: string, kind: ParameterKind | undefined, value: string): SugarParameter {
+  if (kind === 'boolean') return parseBoolean(name, value)
+  if (kind === 'number' || kind === 'integer') {
     const number = Number(value)
     if (!Number.isFinite(number)) throw new Error(`--${name.replaceAll('_', '-')} must be a number`)
     return number
@@ -58,6 +53,8 @@ export function parseSugarCliArgs(argv: string[]): ParsedSugarCliArgs {
   if (!rawAction || rawAction === '--help' || rawAction === '-h') throw new Error(SUGAR_CLI_HELP)
   const action = rawAction.replaceAll('-', '_')
   if (!isSugarAction(action)) throw new Error(`Unknown Sugar action: ${rawAction}\n\n${SUGAR_CLI_HELP}`)
+  // Unknown names pass through untyped so the shared validator reports them.
+  const kinds = new Map(requestParameters(action).map((spec) => [spec.name, spec.kind]))
   const parameters: SugarParameters = {}
   for (let index = 0; index < flags.length; index++) {
     const flag = flags[index]
@@ -66,13 +63,14 @@ export function parseSugarCliArgs(argv: string[]): ParsedSugarCliArgs {
     const rawName = flag.slice(2, equals === -1 ? undefined : equals)
     const negated = rawName.startsWith('no-')
     const name = (negated ? rawName.slice(3) : rawName).replaceAll('-', '_')
+    const kind = kinds.get(name)
     let value = equals === -1 ? undefined : flag.slice(equals + 1)
     if (negated) {
-      if (!BOOLEAN_FLAGS.has(name) || value !== undefined) throw new Error(`Invalid negated flag: ${flag}`)
+      if (kind !== 'boolean' || value !== undefined) throw new Error(`Invalid negated flag: ${flag}`)
       parameters[name] = false
       continue
     }
-    if (value === undefined && BOOLEAN_FLAGS.has(name)) {
+    if (value === undefined && kind === 'boolean') {
       const following = flags[index + 1]
       if (following === 'true' || following === 'false') value = flags[++index]
       else value = 'true'
@@ -80,7 +78,7 @@ export function parseSugarCliArgs(argv: string[]): ParsedSugarCliArgs {
       value = flags[++index]
       if (value === undefined || value.startsWith('--')) throw new Error(`Missing value for --${rawName}`)
     }
-    parameters[name] = coerceFlag(name, value)
+    parameters[name] = coerceFlag(name, kind, value)
   }
   return { action, parameters }
 }

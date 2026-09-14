@@ -70,8 +70,9 @@ export const resolveTokenParameters = Effect.fn('AeroCli.resolveTokenParameters'
     const raw = resolved[name] === undefined ? '' : String(resolved[name])
     // Addresses are intentional; unknown ones keep failing downstream.
     if (raw.startsWith('0x')) continue
+    // Keep the RPC error's own message ("... was rate limited"), not Effect's generic wrapper.
     catalog ??= client
-      ? dedupeTokens(yield* Effect.tryPromise(() => client.getAllTokens(true)))
+      ? dedupeTokens(yield* Effect.tryPromise({ try: () => client.getAllTokens(true), catch: (cause) => cause }))
       : yield* loadTokenCatalog(chainId)
     const tokens = catalog
     const { exact } = resolveTokenReference(tokens, raw)

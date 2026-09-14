@@ -17,11 +17,14 @@ import { getChainSettings } from './config'
 import { normalizeAddress } from './helpers'
 import type { ReadArgs, SugarContext } from './internal/context'
 import { runSugar } from './internal/interop'
-import { invalidateSugarCaches } from './internal/caches'
+import { invalidateSugarCaches, SugarCaches, sugarCachesLayer } from './internal/caches'
 import * as Cache from 'effect/Cache'
+import * as Context from 'effect/Context'
+import * as Layer from 'effect/Layer'
 import { getPoolCount, getPoolPaginator, pageSize } from './internal/pagination'
 import {
-  makeRpcReadExecutor,
+  RpcReader,
+  rpcReaderLayer,
   type RpcReadExecutor,
   type RpcReadTask,
 } from './internal/rpc-executor'
@@ -77,7 +80,22 @@ export class SugarClient {
     this.settings = getChainSettings(chainId, { env: options.env, overrides: { ...options.settings, rpcUrl: options.rpcUrl ?? options.settings?.rpcUrl } })
     this.account = options.account ? normalizeAddress(options.account) : undefined
     const onRpcEvent = options.onRpcEvent
-    const rpc = makeRpcReadExecutor(options.rpcPolicy, onRpcEvent)
+    const cacheEntry = options.cacheStore?.cachesFor(this.settings.chainId, this.settings.rpcUrl, JSON.stringify(this.settings))
+      ?? { priceRateCache: new Map() }
+    // Both services are plain in-memory handles with no finalizers, so the build scope closes immediately.
+    const services = Effect.runSync(Effect.scoped(Layer.build(Layer.mergeAll(
+      rpcReaderLayer(options.rpcPolicy, onRpcEvent),
+      sugarCachesLayer(cacheEntry, {
+        tokens: tokensApi.tokenCatalogLookup,
+        rawPools: poolsApi.rawPoolsLookup,
+        pools: poolsApi.poolsLookup,
+        permit2Address: transactionsApi.permit2AddressLookup,
+        veNftContracts: venftsApi.veNftContractsLookup,
+        poolLocator: poolsApi.lookupPoolLocator,
+      }, () => this.ctx),
+    ))))
+    const rpc = Context.get(services, RpcReader)
+    const readCaches = Context.get(services, SugarCaches)
     this.rpc = rpc
     this.publicClient = options.publicClient ?? createPublicClient({
       // Several upstream public RPCs (notably Lisk dRPC) reject JSON-RPC batch
@@ -105,11 +123,9 @@ export class SugarClient {
       account,
       publicClient,
       rpc,
-      caches: options.cacheStore?.cachesFor(this.settings.chainId, this.settings.rpcUrl, JSON.stringify(this.settings))
-        ?? { priceRateCache: new Map() },
+      caches: cacheEntry,
+      readCaches,
       poolLocatorStore: options.poolLocatorStore,
-      resolvedPoolLocators: Effect.runSync(poolsApi.makeResolvedPoolLocatorCache(() => this.ctx)),
-      veNftContractsCache: undefined,
       readTask,
       read: (address, abi, functionName, args, deadline) =>
         rpc.read(functionName, readTask(address, abi, functionName, args), deadline),
@@ -132,7 +148,7 @@ export class SugarClient {
   invalidate(): Promise<void> {
     return runSugar(Effect.all([
       invalidateSugarCaches(this.ctx.caches),
-      Cache.invalidateAll(this.ctx.resolvedPoolLocators),
+      Cache.invalidateAll(this.ctx.readCaches.resolvedPoolLocators),
     ]).pipe(Effect.asVoid))
   }
 

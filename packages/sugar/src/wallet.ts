@@ -1,12 +1,25 @@
 import { execFileSync } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { getAddress, type Address } from 'viem'
 import * as Schema from 'effect/Schema'
 import { validateMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english'
+import { browserWalletRecordSchema, type BrowserWalletRecord } from './browser-wallet-protocol'
+
+const walletEvents = new EventEmitter()
+export function onWalletChange(listener: () => void): () => void {
+  walletEvents.on('change', listener)
+  const paths = ['browser-wallet.json', 'walletconnect-session.json'].map((name) => join(walletDir(), name))
+  for (const path of paths) watchFile(path, { persistent: false, interval: 500 }, listener)
+  return () => {
+    walletEvents.off('change', listener)
+    for (const path of paths) unwatchFile(path, listener)
+  }
+}
 
 export function parseMnemonic(value: string): string {
   const mnemonic = value.normalize('NFKD').trim().toLowerCase().replace(/\s+/g, ' ')
@@ -100,6 +113,7 @@ const walletConnectRecordSchema = Schema.Union([
 
 export type ActiveWallet =
   | { source: 'local'; address: Address }
+  | { source: 'browser'; address: Address; peer: string }
   | { source: 'walletconnect'; address: Address; topic: string; chains: number[]; peer?: string }
 
 export function walletDir(): string {
@@ -204,8 +218,33 @@ export function deleteWalletConnectRecord(): boolean {
   return true
 }
 
-/** WalletConnect wins over the local wallet when both exist: pairing is an explicit recent action. */
+export function saveBrowserWalletRecord(record: BrowserWalletRecord): void {
+  ensureDir()
+  const path = join(walletDir(), 'browser-wallet.json')
+  writeFileSync(path, JSON.stringify(Schema.decodeUnknownSync(browserWalletRecordSchema)(record)), { mode: 0o600 })
+  chmodSync(path, 0o600)
+  walletEvents.emit('change')
+}
+
+export function loadBrowserWalletRecord(): BrowserWalletRecord | undefined {
+  const path = join(walletDir(), 'browser-wallet.json')
+  if (!existsSync(path)) return undefined
+  try { return Schema.decodeUnknownSync(browserWalletRecordSchema)(JSON.parse(readFileSync(path, 'utf8'))) }
+  catch { return undefined }
+}
+
+export function deleteBrowserWalletRecord(): boolean {
+  const path = join(walletDir(), 'browser-wallet.json')
+  if (!existsSync(path)) return false
+  rmSync(path)
+  walletEvents.emit('change')
+  return true
+}
+
+/** An explicitly selected external wallet takes precedence over the stored local wallet. */
 export function getActiveWallet(): ActiveWallet | undefined {
+  const browser = loadBrowserWalletRecord()
+  if (browser) return { source: 'browser', address: getAddress(browser.address), peer: browser.peer }
   const wc = loadWalletConnectRecord()
   if (wc) return { source: 'walletconnect', address: wc.address, topic: wc.topic, chains: wc.chains, peer: wc.peer }
   const local = loadLocalWallet()

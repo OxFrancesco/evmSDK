@@ -6,7 +6,7 @@ import * as Effect from 'effect/Effect'
 import type { Address } from 'viem'
 import { abis } from './abis'
 import { addressKey, normalizeAddress, tupleValues } from './helpers'
-import { makeReadCache, makeSharedReadCache, sharedCacheGet } from './internal/caches'
+import { sharedCacheGet, type SharedLookup } from './internal/caches'
 import type { ResolvedPoolLocator, SugarContext } from './internal/context'
 import { clientCall } from './internal/interop'
 import { paginate } from './internal/pagination'
@@ -14,24 +14,25 @@ import { epochFromTuple, poolForSwapFromTuple, preparePools, prepareTokens } fro
 import {
   ADDRESS_ZERO,
   type LiquidityPool,
+  type LiquidityPoolForSwap,
   type Price,
   type SugarPoolLocatorKey,
   type Token,
 } from './types'
 
+export const rawPoolsLookup: SharedLookup<boolean, unknown[]> = (active, key) =>
+  paginate(active, key ? 'forSwaps' : 'all', (limit, offset) => active.readTask<unknown[]>(
+    active.settings.sugarContractAddress,
+    abis.sugar,
+    key ? 'forSwaps' : 'all',
+    key ? [limit, offset] : [limit, offset, 0],
+  ))
+
 export const getRawPools = Effect.fn('Sugar.Pools.getRawPools')(function* (
   ctx: SugarContext,
   forSwaps = false,
 ) {
-  const cache = ctx.caches.rawPoolCache ??= yield* makeSharedReadCache(ctx.caches, (active, key: boolean) =>
-    paginate(active, key ? 'forSwaps' : 'all', (limit, offset) => active.readTask<unknown[]>(
-      active.settings.sugarContractAddress,
-      abis.sugar,
-      key ? 'forSwaps' : 'all',
-      key ? [limit, offset] : [limit, offset, 0],
-    )),
-  )
-  return yield* sharedCacheGet(ctx, cache, forSwaps)
+  return yield* sharedCacheGet(ctx, ctx.readCaches.rawPools, forSwaps)
 })
 
 /**
@@ -39,20 +40,20 @@ export const getRawPools = Effect.fn('Sugar.Pools.getRawPools')(function* (
  * LiquidityPool records, `true` keeps the compact for-swaps tuples. The
  * SugarClient facade narrows the union through its overloads.
  */
+export const poolsLookup: SharedLookup<boolean, LiquidityPool[] | LiquidityPoolForSwap[]> = (active, key) =>
+  Effect.gen(function* () {
+    const raw = yield* clientCall(() => active.client.getRawPools(key))
+    if (key) return raw.map((pool) => poolForSwapFromTuple(pool, active.settings))
+    const tokens = yield* clientCall(() => active.client.getAllTokens())
+    const prices = yield* clientCall(() => active.client.getPrices(tokens))
+    return preparePools(raw, tokens, prices, active.settings)
+  })
+
 export const getPools = Effect.fn('Sugar.Pools.getPools')(function* (
   ctx: SugarContext,
   forSwaps = false,
 ) {
-  const cache = ctx.caches.poolCache ??= yield* makeSharedReadCache(ctx.caches, (active, key: boolean) =>
-    Effect.gen(function* () {
-      const raw = yield* clientCall(() => active.client.getRawPools(key))
-      if (key) return raw.map((pool) => poolForSwapFromTuple(pool, active.settings))
-      const tokens = yield* clientCall(() => active.client.getAllTokens())
-      const prices = yield* clientCall(() => active.client.getPrices(tokens))
-      return preparePools(raw, tokens, prices, active.settings)
-    }),
-  )
-  return yield* sharedCacheGet(ctx, cache, forSwaps)
+  return yield* sharedCacheGet(ctx, ctx.readCaches.pools, forSwaps)
 })
 
 export const getPoolsForSwaps = Effect.fn('Sugar.Pools.getPoolsForSwaps')(function* (
@@ -132,7 +133,7 @@ const storedLocatorOffset = Effect.fn('Sugar.Pools.storedLocatorOffset')(functio
   )
 })
 
-const lookupPoolLocator = Effect.fn('Sugar.Pools.lookupPoolLocator')(function* (
+export const lookupPoolLocator = Effect.fn('Sugar.Pools.lookupPoolLocator')(function* (
   ctx: SugarContext,
   poolAddress: Address,
 ) {
@@ -171,17 +172,8 @@ export const resolvePoolLocator = Effect.fn('Sugar.Pools.resolvePoolLocator')(fu
   ctx: SugarContext,
   poolAddress: Address,
 ) {
-  return yield* Cache.get(ctx.resolvedPoolLocators, addressKey(poolAddress))
+  return yield* Cache.get(ctx.readCaches.resolvedPoolLocators, addressKey(poolAddress))
 })
-
-/** Lookup used by the per-client locator cache; keys are lowercased addresses. */
-export function makeResolvedPoolLocatorCache(getCtx: () => SugarContext) {
-  return makeReadCache(
-    (cacheKey: string) => Effect.suspend(() => lookupPoolLocator(getCtx(), normalizeAddress(cacheKey))),
-    4_096,
-    0,
-  )
-}
 
 function epochMaps(pools: LiquidityPool[], tokens: Token[], prices: Price[]) {
   return {

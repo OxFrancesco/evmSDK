@@ -2,6 +2,7 @@ import { TextAttributes } from '@opentui/core'
 import { useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { useEffect, useMemo, useState } from 'react'
 import { formatCliError } from '../../cli'
+import { SelectDialog } from '../dialogs'
 import { formatNumber, formatPercent, formatRatio, formatUsd, pad, weekLabel } from '../format'
 import { renderColumns, renderDonut, renderHBar, renderHeatmap, renderLines, renderScatter, renderWaterfall, DITHER_COLORS, type DitherColor } from '../analytics/dither'
 import type { AnalyticsReport } from '../analytics/load'
@@ -16,6 +17,13 @@ import { ScreenFrame, Spinner } from '../widgets'
 const TABS = ['health', 'flywheel', 'trade', 'token', 'arena'] as const
 type Tab = (typeof TABS)[number]
 type TradeLens = 'tvl' | 'volume' | 'fees' | 'efficiency' | 'rpv'
+const TRADE_LENSES: readonly { lens: TradeLens; title: string }[] = [
+  { lens: 'tvl', title: 'TVL, largest first' },
+  { lens: 'volume', title: 'Weekly volume' },
+  { lens: 'fees', title: 'Weekly fees' },
+  { lens: 'efficiency', title: 'Efficiency (fees per TVL)' },
+  { lens: 'rpv', title: 'Rewards per vote' },
+]
 const MIN_TRADE_TVL = 100_000
 
 const LANE_COLOR = {
@@ -101,11 +109,18 @@ export function AnalyticsScreen() {
     if (key.name === 'left' || key.name === 'h') return setTab(TABS[(TABS.indexOf(tab) + TABS.length - 1) % TABS.length])
     if (key.name === 'right' || key.name === 'l') return setTab(TABS[(TABS.indexOf(tab) + 1) % TABS.length])
     if (key.name >= '1' && key.name <= '5') return setTab(TABS[Number(key.name) - 1] ?? tab)
-    if (tab === 'trade' && (key.name === 't' || key.name === 'v' || key.name === 'f' || key.name === 'e' || key.name === 'p')) {
-      const next = key.name === 't' ? 'tvl' : key.name === 'v' ? 'volume' : key.name === 'f' ? 'fees' : key.name === 'e' ? 'efficiency' : 'rpv'
-      setLens(next)
-      setSelected(0)
-      return
+    if (tab === 'trade' && key.name === 'o') {
+      const pick = (next: TradeLens) => () => {
+        setLens(next)
+        setSelected(0)
+      }
+      return app.openDialog((close) => (
+        <SelectDialog title="Sort pools" close={close} items={TRADE_LENSES.map((entry) => ({
+          title: entry.title,
+          hint: entry.lens === lens ? 'current' : undefined,
+          onSelect: pick(entry.lens),
+        }))} />
+      ))
     }
     if (key.name === 'up' || key.name === 'k') return setSelected(Math.max(0, active - 1))
     if (key.name === 'down' || key.name === 'j') return setSelected(Math.min(rows.length - 1, active + 1))
@@ -128,7 +143,7 @@ export function AnalyticsScreen() {
   const hints = [
     { key: '←→', label: 'tab' },
     { key: '1-5', label: 'jump' },
-    ...(tab === 'trade' ? [{ key: 'tvfep', label: 'sort' }] : []),
+    ...(tab === 'trade' ? [{ key: 'o', label: `sort: ${lens}` }] : []),
     ...(rows.length > 0 ? [{ key: 'enter', label: 'epoch' }] : []),
     { key: 'ctrl+r', label: 'refresh' },
     { key: 'esc', label: 'back' },
@@ -543,7 +558,7 @@ function TradeTab(props: {
   const lastWeek = weeks[weeks.length - 1] ? weekLabel(weeks[weeks.length - 1].ts) : ''
   return (
     <box gap={1}>
-      <Panel title="Pools" source="sugar">
+      <Panel title={`Pools by ${props.lens}`} source="sugar">
         <text fg={theme.textMuted}>{`${pad('POOL', 22)} ${pad('TYPE', 6)} ${pad('TVL', 10)} ${pad('FEES', 8)}  LANE`}</text>
         {props.rows.length === 0 ? (
           <text fg={theme.textMuted}>No pools above $100k TVL</text>

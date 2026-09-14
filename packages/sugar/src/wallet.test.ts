@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { formatCliError, splitSendFlags } from './cli'
@@ -8,7 +8,10 @@ import type { SugarJson } from './types'
 import {
   deleteLocalWallet, deleteWalletConnectRecord, getActiveWallet, loadLocalWallet,
   loadWalletConnectRecord, openSecret, saveLocalWallet, saveWalletConnectRecord, sealSecret,
+  deleteBrowserWalletRecord, loadBrowserWalletRecord, saveBrowserWalletRecord,
+  onWalletChange,
 } from './wallet'
+import { externalWalletSigner } from './external-wallet-signer'
 
 const ADDRESS = '0x1111111111111111111111111111111111111111' as const
 const TEST_MNEMONIC = 'test test test test test test test test test test test junk'
@@ -67,6 +70,35 @@ describe('wallet store', () => {
     expect(loadWalletConnectRecord()?.chains).toEqual([8453])
     expect(deleteWalletConnectRecord()).toBe(true)
     expect(getActiveWallet()).toEqual({ source: 'local', address: ADDRESS })
+  })
+
+  test('browser selection stores only identity and uses the shared external signer', () => {
+    saveLocalWallet(record)
+    saveBrowserWalletRecord({ version: 1, address: ADDRESS, peer: 'Rabby Wallet' })
+    expect(getActiveWallet()).toEqual({ source: 'browser', address: ADDRESS, peer: 'Rabby Wallet' })
+    expect(externalWalletSigner(() => {})).toMatchObject({ address: ADDRESS, describe: 'Rabby Wallet in browser' })
+    const path = join(dir, 'browser-wallet.json')
+    expect(statSync(path).mode & 0o777).toBe(0o600)
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ version: 1, address: ADDRESS, peer: 'Rabby Wallet' })
+    expect(deleteBrowserWalletRecord()).toBe(true)
+    expect(getActiveWallet()).toEqual({ source: 'local', address: ADDRESS })
+  })
+
+  test('invalid browser identities are ignored and terminal control sequences rejected', () => {
+    writeFileSync(join(dir, 'browser-wallet.json'), JSON.stringify({ version: 1, address: 'bad', peer: 'Rabby' }))
+    expect(loadBrowserWalletRecord()).toBeUndefined()
+    expect(() => saveBrowserWalletRecord({ version: 1, address: ADDRESS, peer: '\u001b[2J' })).toThrow()
+  })
+
+  test('notices a browser selection removed by another CLI process', async () => {
+    saveBrowserWalletRecord({ version: 1, address: ADDRESS, peer: 'Rabby Wallet' })
+    const removed = Promise.withResolvers<void>()
+    const unwatch = onWalletChange(() => { if (!loadBrowserWalletRecord()) removed.resolve() })
+    try {
+      rmSync(join(dir, 'browser-wallet.json'))
+      await removed.promise
+      expect(getActiveWallet()).toBeUndefined()
+    } finally { unwatch() }
   })
 })
 

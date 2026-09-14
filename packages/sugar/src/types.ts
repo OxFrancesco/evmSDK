@@ -122,9 +122,10 @@ export type SugarPoolLocatorStore = {
 /**
  * Mutable read caches a SugarClient consults before hitting the RPC. Keyed
  * caches are `effect/Cache` handles: concurrent lookups for a missing key
- * share one in-flight read and failed lookups are never retained. Handles are
- * created lazily by the first client that needs them, so a shared store entry
- * keeps serving every client on the same chain and RPC.
+ * share one in-flight read and failed lookups are never retained. The first
+ * client built on a store entry attaches the handles (see
+ * internal/caches.ts), so the entry keeps serving every later client on the
+ * same chain and RPC.
  */
 export type SugarClientCaches = {
   ttlMs?: number

@@ -1,6 +1,8 @@
+import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Predicate from 'effect/Predicate'
 import * as Schedule from 'effect/Schedule'
 import { SugarRpcError, type SugarRpcErrorCode } from '../errors'
@@ -340,7 +342,7 @@ export type RpcReadExecutor = Readonly<{
   ): Effect.Effect<Array<RpcReadResult<A>>, SugarRpcError>
 }>
 
-export function makeRpcReadExecutor(
+function makeRpcReadExecutor(
   options: SugarRpcPolicyOptions = {},
   observer?: SugarRpcObserver,
 ): RpcReadExecutor {
@@ -389,4 +391,11 @@ export function makeRpcReadExecutor(
     forEachReadResult: (operation, items, task, concurrency, requestedDeadline) =>
       forEachProgram(operation, items, task, concurrency, requestedDeadline, toReadResult),
   }
+}
+
+/** The per-client RPC read executor: retry/deadline policy plus observer. */
+export class RpcReader extends Context.Service<RpcReader, RpcReadExecutor>()('@beegreat/sugar/RpcReader') {}
+
+export function rpcReaderLayer(options?: SugarRpcPolicyOptions, observer?: SugarRpcObserver): Layer.Layer<RpcReader> {
+  return Layer.sync(RpcReader, () => makeRpcReadExecutor(options, observer))
 }

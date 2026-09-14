@@ -3,14 +3,17 @@ import { useKeyboard } from '@opentui/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatCliError } from '../../cli'
 import { isSugarTxAction, type SugarAction, type SugarParameters } from '../../contracts'
+import { acceptsWallet } from '../../action-schema'
 import { toTokenChoice } from '../../token-catalog'
 import { createExecutionPlan, extractPlanSteps, localMnemonicSigner, renderPlanSummary, sendPlan, type ExecutionPlan, type PlanSigner, type PlanStep } from '../../send'
 import type { SugarJson, Token } from '../../types'
-import { loadLocalWallet, loadWalletConnectRecord, openSecret } from '../../wallet'
-import { SelectDialog, PromptDialog } from '../dialogs'
-import { ACTION_FORMS, ACTION_TITLES, buildParameters, initialValues, type FieldSpec, type FormValues } from '../fields'
+import { loadLocalWallet, openSecret } from '../../wallet'
+import { externalWalletSigner } from '../../external-wallet-signer'
+import { SelectDialog, PromptDialog, type SelectItem } from '../dialogs'
+import { ANY, actionFields, actionTitle, buildParameters, initialValues, POOL_IS_CL, visibleFields, type FieldSpec, type FormValues } from '../fields'
+import { formatNumber, formatUsd, jsonNumber, jsonRecord, jsonString } from '../format'
 import { humanizeResult } from '../humanize'
-import { clearTuiPrefetch, runTuiAction, tuiTokenCatalog } from '../sugar'
+import { clearTuiPrefetch, POOLS_BROWSE_PARAMETERS, runTuiAction, tuiTokenCatalog } from '../sugar'
 import { theme } from '../theme'
 import { useApp } from '../store'
 import { ScreenFrame, Spinner } from '../widgets'
@@ -24,6 +27,8 @@ type Phase =
   | { kind: 'broadcast' }
   | { kind: 'sent'; hashes: string[] }
 
+const ENTER = new Set(['return', 'enter', 'linefeed'])
+
 function presetValues(fields: FieldSpec[], preset?: SugarParameters): FormValues {
   const values = initialValues(fields)
   for (const field of fields) {
@@ -32,6 +37,11 @@ function presetValues(fields: FieldSpec[], preset?: SugarParameters): FormValues
     values[field.name] = field.kind === 'boolean' ? value === true : String(value)
   }
   return values
+}
+
+const scaled = (value: SugarJson | undefined, decimals = 18): number => {
+  const raw = jsonString(value) ?? (jsonNumber(value) === undefined ? undefined : String(jsonNumber(value)))
+  return raw === undefined ? 0 : Number(raw) / 10 ** decimals
 }
 
 function FieldRow(props: { field: FieldSpec; value: string | boolean; active: boolean; editable: boolean; onInput: (value: string) => void }) {
@@ -51,7 +61,7 @@ function FieldRow(props: { field: FieldSpec; value: string | boolean; active: bo
           <input
             focused
             value={String(value)}
-            placeholder={field.kind === 'token' ? 'type a symbol, or ⏎ to browse' : field.placeholder}
+            placeholder={field.placeholder}
             onInput={props.onInput}
             backgroundColor={theme.backgroundElement}
             focusedBackgroundColor={theme.backgroundElement}
@@ -69,28 +79,11 @@ function FieldRow(props: { field: FieldSpec; value: string | boolean; active: bo
   )
 }
 
-function JsonView(props: { data: SugarJson; focused: boolean }) {
-  const lines = useMemo(() => JSON.stringify(props.data, null, 2).split('\n'), [props.data])
+function LinesView(props: { lines: string[]; focused: boolean; mutedFirst?: boolean }) {
   return (
     <scrollbox focused={props.focused} flexGrow={1} minHeight={0}>
-      {lines.map((line, index) => (
-        <text key={index} fg={theme.text} wrapMode="none" selectable>{line === '' ? ' ' : line}</text>
-      ))}
-    </scrollbox>
-  )
-}
-
-function HumanResultView(props: { action: SugarAction; data: SugarJson; focused: boolean }) {
-  const result = useMemo(() => humanizeResult(props.action, props.data), [props.action, props.data])
-  return (
-    <scrollbox focused={props.focused} flexGrow={1} minHeight={0}>
-      {result.lines.map((line, index) => (
-        <text
-          key={index}
-          fg={result.hasHeader && index === 0 ? theme.textMuted : theme.text}
-          wrapMode="none"
-          selectable
-        >
+      {props.lines.map((line, index) => (
+        <text key={index} fg={props.mutedFirst && index === 0 ? theme.textMuted : theme.text} wrapMode="none" selectable>
           {line === '' ? ' ' : line}
         </text>
       ))}
@@ -98,10 +91,29 @@ function HumanResultView(props: { action: SugarAction; data: SugarJson; focused:
   )
 }
 
+function JsonView(props: { data: SugarJson; focused: boolean }) {
+  const lines = useMemo(() => JSON.stringify(props.data, null, 2).split('\n'), [props.data])
+  return <LinesView lines={lines} focused={props.focused} />
+}
+
+function HumanResultView(props: { action: SugarAction; data: SugarJson; focused: boolean }) {
+  const result = useMemo(() => humanizeResult(props.action, props.data), [props.action, props.data])
+  return <LinesView lines={result.lines} focused={props.focused} mutedFirst={result.hasHeader} />
+}
+
+/** Enter-hint for the active row: what pressing Enter does here. */
+function enterLabel(field: FieldSpec | undefined, last: boolean, tx: boolean): string {
+  if (field?.kind === 'token') return 'browse tokens'
+  if (field?.picker === 'position') return 'pick position'
+  if (field?.picker === 'pool') return 'pick pool'
+  if (!last) return 'next'
+  return tx ? 'build plan' : 'run'
+}
+
 export function ActionScreen(props: { action: SugarAction; preset?: SugarParameters }) {
   const app = useApp()
-  const fields: FieldSpec[] = ACTION_FORMS[props.action]
-  const [values, setValues] = useState<FormValues>(() => presetValues(fields, props.preset))
+  const allFields = useMemo(() => actionFields(props.action), [props.action])
+  const [values, setValues] = useState<FormValues>(() => presetValues(allFields, props.preset))
   const [index, setIndex] = useState(0)
   const [phase, setPhase] = useState<Phase>({ kind: 'form' })
   const [log, setLog] = useState<string[]>([])
@@ -124,15 +136,23 @@ export function ActionScreen(props: { action: SugarAction; preset?: SugarParamet
     })
     return pending
   }, [app.chain])
-  const needsCatalog = fields.some((entry) => entry.kind === 'token')
+  const needsCatalog = allFields.some((entry) => entry.kind === 'token')
   useEffect(() => {
     if (needsCatalog) void loadCatalog().catch(() => undefined)
   }, [loadCatalog, needsCatalog])
-  const title = ACTION_TITLES[props.action]
+  const title = actionTitle(props.action)
   const isTx = isSugarTxAction(props.action)
-  const field = fields[index]
+  const fields = visibleFields(allFields, values)
+  const at = Math.min(index, fields.length - 1)
+  const field = fields[at]
+  const setBusy = app.setBusy
+  useEffect(() => {
+    setBusy(phase.kind === 'broadcast')
+    return () => setBusy(false)
+  }, [setBusy, phase.kind])
 
   const setValue = (name: string, value: string | boolean) => setValues((current) => ({ ...current, [name]: value }))
+  const patch = (next: FormValues) => setValues((current) => ({ ...current, ...next }))
 
   const showTokenPicker = (tokenField: FieldSpec, tokens: Token[]) => {
     app.openDialog((close) => (
@@ -145,15 +165,13 @@ export function ActionScreen(props: { action: SugarAction; preset?: SugarParamet
             title: choice.title,
             description: choice.description,
             searchText: token.tokenAddress,
-            onSelect: () => {
-              // Ambiguous symbols fall back to the address so the picked
-              // token is the one that gets swapped.
-              setValue(tokenField.name, token.tokenAddress)
-            },
+            // Ambiguous symbols fall back to the address so the picked
+            // token is the one that gets swapped.
+            onSelect: () => setValue(tokenField.name, token.tokenAddress),
           }
         })}
         initialFilter={String(values[tokenField.name])}
-        placeholder='Type to filter...'
+        empty="No tokens loaded for this chain"
         close={close}
       />
     ))
@@ -171,11 +189,78 @@ export function ActionScreen(props: { action: SugarAction; preset?: SugarParamet
     }).finally(() => { pickerPending.current = false })
   }
 
+  /** Pick one of the wallet's positions; fills pool and position together. */
+  const openPositionPicker = async () => {
+    if (!app.wallet) return app.toast('error', 'No wallet', 'Connect a wallet to pick from your positions (Wallet screen)')
+    if (pickerPending.current) return
+    pickerPending.current = true
+    try {
+      const data = await runTuiAction('positions', { chain: app.chain, wallet: app.wallet.address })
+      if (!alive.current) return
+      const items: SelectItem[] = (Array.isArray(data) ? data : []).flatMap((entry) => {
+        const position = jsonRecord(entry)
+        const pool = position ? jsonRecord(position.pool) : undefined
+        if (!position || !pool) return []
+        const id = jsonString(position.id) ?? String(jsonNumber(position.id) ?? '')
+        const lp = jsonString(pool.lp) ?? ''
+        const token0 = jsonRecord(pool.token0)
+        const token1 = jsonRecord(pool.token1)
+        const amount0 = scaled(position.amount_token0, jsonNumber(token0?.decimals) ?? 18) + scaled(position.staked_token0, jsonNumber(token0?.decimals) ?? 18)
+        const amount1 = scaled(position.amount_token1, jsonNumber(token1?.decimals) ?? 18) + scaled(position.staked_token1, jsonNumber(token1?.decimals) ?? 18)
+        const staked = scaled(position.staked, 0) > 0 ? 'staked' : 'unstaked'
+        return [{
+          id: `${lp}:${id}`,
+          title: `${jsonString(pool.symbol) ?? lp} #${id}`,
+          description: `${formatNumber(amount0)} / ${formatNumber(amount1)} · ${staked}`,
+          searchText: `${lp} ${staked}`,
+          onSelect: () => patch({ pool: lp, position: id }),
+        }]
+      })
+      app.openDialog((close) => <SelectDialog title="Your positions" items={items} empty="No positions on this chain" close={close} />)
+    } catch (cause) {
+      if (alive.current) app.toast('error', 'Positions failed to load', formatCliError(cause))
+    } finally {
+      pickerPending.current = false
+    }
+  }
+
+  /** Pick any pool on the chain; for deposits this replaces the token-pair description. */
+  const openPoolPicker = async (poolField: FieldSpec) => {
+    if (pickerPending.current) return
+    pickerPending.current = true
+    try {
+      const data = await runTuiAction('pools', { chain: app.chain, ...POOLS_BROWSE_PARAMETERS })
+      if (!alive.current) return
+      const items: SelectItem[] = (Array.isArray(data) ? data : []).flatMap((entry) => {
+        const pool = jsonRecord(entry)
+        if (!pool) return []
+        const lp = jsonString(pool.lp) ?? ''
+        const tvl = jsonNumber(pool.tvl)
+        return [{
+          id: lp,
+          title: jsonString(pool.symbol) ?? lp,
+          description: `${jsonString(pool.type_label) ?? ''}${tvl === undefined ? '' : ` · ${formatUsd(tvl)}`}`,
+          searchText: lp,
+          onSelect: () => patch(
+            props.action === 'deposit'
+              ? { [poolField.name]: lp, [POOL_IS_CL]: pool.is_cl === true, token0: '', token1: '', pool_type: ANY }
+              : { [poolField.name]: lp },
+          ),
+        }]
+      })
+      app.openDialog((close) => <SelectDialog title="Pools" items={items} empty="No pools loaded for this chain" close={close} />)
+    } catch (cause) {
+      if (alive.current) app.toast('error', 'Pools failed to load', formatCliError(cause))
+    } finally {
+      pickerPending.current = false
+    }
+  }
+
   const cycleChoice = (step: number) => {
-    if (!field || field.kind !== 'choice') return
-    const choices = field.choices!
-    const at = choices.indexOf(String(values[field.name]))
-    setValue(field.name, choices[(at + step + choices.length) % choices.length])
+    if (!field?.choices) return
+    const choices = field.choices
+    const current = choices.indexOf(String(values[field.name]))
+    setValue(field.name, choices[(current + step + choices.length) % choices.length])
   }
 
   const run = async () => {
@@ -185,7 +270,7 @@ export function ActionScreen(props: { action: SugarAction; preset?: SugarParamet
     } catch (cause) {
       return app.toast('error', 'Invalid input', formatCliError(cause))
     }
-    if ((isTx || props.action === 'positions' || props.action === 'stocks') && parameters.wallet === undefined && app.wallet) {
+    if (acceptsWallet(props.action) && parameters.wallet === undefined && app.wallet) {
       parameters.wallet = app.wallet.address
     }
     if (isTx && parameters.wallet === undefined) {
@@ -236,18 +321,8 @@ export function ActionScreen(props: { action: SugarAction; preset?: SugarParamet
   }
 
   const sign = (plan: Plan) => {
-    const wc = loadWalletConnectRecord()
-    if (wc) {
-      const signer: PlanSigner = {
-        address: wc.address,
-        describe: `WalletConnect (${wc.peer ?? 'wallet'})`,
-        send: async (transaction, chainId) => {
-          const { walletConnectSendTransaction } = await import('../../walletconnect')
-          return walletConnectSendTransaction(transaction, chainId, (line) => setLog((lines) => [...lines, line]))
-        },
-      }
-      return void broadcast(signer, plan)
-    }
+    const external = externalWalletSigner((line) => setLog((lines) => [...lines, line]))
+    if (external) return void broadcast(external, plan)
     const local = loadLocalWallet()
     if (!local) return app.toast('error', 'No wallet', 'Connect or create a wallet first (Wallet screen)')
     app.openDialog((close) => (
@@ -267,32 +342,37 @@ export function ActionScreen(props: { action: SugarAction; preset?: SugarParamet
     ))
   }
 
+  const activate = () => {
+    if (field?.kind === 'token') return openTokenPicker(field)
+    if (field?.picker === 'position') return void openPositionPicker()
+    if (field?.picker === 'pool') return void openPoolPicker(field)
+    if (at < fields.length - 1) return setIndex(at + 1)
+    return void run()
+  }
+
   useKeyboard((key) => {
     if (app.dialogOpen) return
     if (phase.kind === 'form') {
       if (key.name === 'escape') return app.pop()
-      if (key.name === 'up' || (key.name === 'tab' && key.shift)) return setIndex((at) => Math.max(0, at - 1))
-      if (key.name === 'down' || (key.name === 'tab' && !key.shift)) return setIndex((at) => Math.min(fields.length - 1, at + 1))
+      if (key.name === 'up' || (key.name === 'tab' && key.shift)) return setIndex(Math.max(0, at - 1))
+      if (key.name === 'down' || (key.name === 'tab' && !key.shift)) return setIndex(Math.min(fields.length - 1, at + 1))
       if (field?.kind === 'boolean' && (key.name === 'space' || key.name === 'left' || key.name === 'right')) {
-        return setValue(field.name, values[field.name] !== true)
+        const next = { ...values, [field.name]: values[field.name] !== true }
+        // Toggling "More options" inserts rows above it; keep the cursor on the toggle.
+        setIndex(Math.max(0, visibleFields(allFields, next).findIndex((entry) => entry.name === field.name)))
+        return setValues(next)
       }
       if (field?.kind === 'choice' && (key.name === 'left' || key.name === 'right' || key.name === 'space')) {
         return cycleChoice(key.name === 'left' ? -1 : 1)
       }
-      if (field?.kind === 'token' && (key.name === 'return' || key.name === 'enter' || key.name === 'linefeed')) {
-        return openTokenPicker(field)
-      }
-      if (key.name === 'return' || key.name === 'enter' || key.name === 'linefeed') {
-        if (index < fields.length - 1) return setIndex(index + 1)
-        return void run()
-      }
+      if (ENTER.has(key.name)) return activate()
       if (key.ctrl && key.name === 'r') return void run()
       return
     }
     if (phase.kind === 'result') {
       if (key.name === 'escape') return setPhase({ kind: 'form' })
       if (key.name === 'j') return setPhase({ ...phase, showJson: !phase.showJson })
-      if (key.name === 'r' || key.name === 'return' || key.name === 'enter') return void run()
+      if ((key.ctrl && key.name === 'r') || ENTER.has(key.name)) return void run()
       return
     }
     if (phase.kind === 'plan') {
@@ -302,28 +382,23 @@ export function ActionScreen(props: { action: SugarAction; preset?: SugarParamet
       }
       if (key.name === 'escape') return setPhase({ kind: 'form' })
       if (key.name === 'j') return setPhase({ ...phase, showJson: true })
-      if (key.name === 'return' || key.name === 'enter' || key.name === 'y') return sign(phase.plan)
+      if (ENTER.has(key.name)) return sign(phase.plan)
       return
     }
     if (phase.kind === 'sent') {
-      if (key.name === 'escape' || key.name === 'return' || key.name === 'enter') return app.pop()
+      if (key.name === 'escape' || ENTER.has(key.name)) return app.pop()
     }
   })
 
   const hints = phase.kind === 'form'
     ? [
         { key: '↑↓', label: 'field' },
-        {
-          key: 'enter',
-          label: field?.kind === 'token'
-            ? 'browse tokens'
-            : index < fields.length - 1 ? 'next' : isTx ? 'build plan' : 'run',
-        },
-        { key: 'ctrl+r', label: 'run' },
+        { key: 'enter', label: enterLabel(field, at >= fields.length - 1, isTx) },
+        { key: 'ctrl+r', label: isTx ? 'build plan' : 'run' },
         { key: 'esc', label: 'back' },
       ]
     : phase.kind === 'result'
-      ? [{ key: '↑↓', label: 'scroll' }, { key: 'j', label: phase.showJson ? 'readable' : 'json' }, { key: 'r', label: 'rerun' }, { key: 'esc', label: 'back' }]
+      ? [{ key: '↑↓', label: 'scroll' }, { key: 'j', label: phase.showJson ? 'readable' : 'json' }, { key: 'ctrl+r', label: 'refresh' }, { key: 'esc', label: 'back' }]
       : phase.kind === 'plan'
         ? phase.showJson
           ? [{ key: '↑↓', label: 'scroll' }, { key: 'esc', label: 'back to plan' }]
@@ -337,25 +412,21 @@ export function ActionScreen(props: { action: SugarAction; preset?: SugarParamet
       {phase.kind === 'form' ? (
         <box flexGrow={1} minHeight={0}>
           <scrollbox flexGrow={1} minHeight={0}>
-            {fields.map((item, at) => (
+            {fields.map((item, position) => (
               <FieldRow
                 key={item.name}
                 field={item}
                 value={values[item.name]}
-                active={at === index}
+                active={position === at}
                 editable={!app.dialogOpen}
-                onInput={(value) => setValue(item.name, value)}
+                // A hand-typed pool is of unknown type; only the picker knows it is CL.
+                onInput={(value) => (item.name === 'pool' ? patch({ pool: value, [POOL_IS_CL]: false }) : setValue(item.name, value))}
               />
             ))}
           </scrollbox>
           <box height={1} flexShrink={0} paddingLeft={1}>
-            <text fg={theme.textMuted}>{field?.help ?? field?.placeholder ?? ''}</text>
+            <text fg={theme.textMuted}>{field?.help ?? ''}</text>
           </box>
-          {isTx ? (
-            <box height={1} flexShrink={0} paddingLeft={1}>
-              <text fg={theme.warning}>⚠ review the plan before signing — early beta, use at your own risk</text>
-            </box>
-          ) : null}
         </box>
       ) : phase.kind === 'running' ? (
         <box flexGrow={1} justifyContent="center" alignItems="center">
@@ -370,28 +441,28 @@ export function ActionScreen(props: { action: SugarAction; preset?: SugarParamet
       ) : phase.kind === 'plan' ? (
         <box flexGrow={1} minHeight={0} gap={1}>
           <box border borderStyle="rounded" borderColor={theme.borderActive} paddingLeft={1} paddingRight={1}>
-            {phase.plan.summary.split('\n').map((line, at) => (
-              <text key={at} fg={at === 0 ? theme.primary : theme.text} attributes={at === 0 ? TextAttributes.BOLD : undefined}>{line}</text>
+            {phase.plan.summary.split('\n').map((line, row) => (
+              <text key={row} fg={row === 0 ? theme.primary : theme.text} attributes={row === 0 ? TextAttributes.BOLD : undefined}>{line}</text>
             ))}
           </box>
           <box paddingLeft={1}>
-            {phase.plan.steps.map((step, at) => (
-              <text key={at} fg={theme.textMuted}>
-                {`${at + 1}. ${step.role === 'approval' ? 'approve' : 'execute'} → `}
+            {phase.plan.steps.map((step, row) => (
+              <text key={row} fg={theme.textMuted}>
+                {`${row + 1}. ${step.role === 'approval' ? 'approve' : 'execute'} → `}
                 <span fg={theme.text}>{step.transaction.to}</span>
               </text>
             ))}
           </box>
           <box paddingLeft={1}>
-            <text fg={theme.warning}>Signing sends real transactions on chain {app.chain}.</text>
+            <text fg={theme.warning}>Signing sends real transactions on chain {app.chain}. Early beta: review every step above.</text>
           </box>
         </box>
       ) : phase.kind === 'broadcast' ? (
         <box flexGrow={1} minHeight={0} gap={1}>
           <Spinner label="Signing and broadcasting..." />
           <scrollbox flexGrow={1} minHeight={0} stickyScroll stickyStart="bottom">
-            {log.map((line, at) => (
-              <text key={at} fg={theme.text}>{line}</text>
+            {log.map((line, row) => (
+              <text key={row} fg={theme.text}>{line}</text>
             ))}
           </scrollbox>
         </box>

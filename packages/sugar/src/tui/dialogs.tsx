@@ -61,7 +61,7 @@ function filterSelectItems(items: SelectItem[], filter: string): SelectItem[] {
   return scored.sort((left, right) => left.score - right.score).map((entry) => entry.item)
 }
 
-export function SelectDialog(props: { title: string; items: SelectItem[]; placeholder?: string; initialFilter?: string; close: () => void }) {
+export function SelectDialog(props: { title: string; items: SelectItem[]; placeholder?: string; initialFilter?: string; empty?: string; close: () => void }) {
   const [filter, setFilter] = useState(props.initialFilter ?? '')
   const filterRef = useRef(filter)
   const [selected, setSelected] = useState(0)
@@ -120,7 +120,7 @@ export function SelectDialog(props: { title: string; items: SelectItem[]; placeh
       <box paddingTop={1} paddingBottom={1}>
         {visible.length === 0 ? (
           <box height={1} paddingLeft={1}>
-            <text fg={theme.textMuted}>No matches</text>
+            <text fg={theme.textMuted}>{props.items.length === 0 ? (props.empty ?? 'Nothing to choose from') : 'No matches'}</text>
           </box>
         ) : (
           visible.map((item, index) => {

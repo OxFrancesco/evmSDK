@@ -1,4 +1,5 @@
 import * as Predicate from 'effect/Predicate'
+import { requestParameters, type ParameterSpec } from './action-schema'
 import { isSupportedChainId } from './config'
 import {
   SUGAR_ACTIONS,
@@ -14,149 +15,15 @@ export {
   type SugarParameter,
   type SugarParameters,
 } from './contracts'
+export { ACTION_SCHEMA, acceptsWallet, actionSpec, requestParameters, type ActionSpec, type ParameterKind, type ParameterSpec } from './action-schema'
 
-type ParameterKind =
-  'address' | 'boolean' | 'decimal_string' | 'integer_string' | 'number' | 'string'
-type ActionSpec = {
-  allowed: Readonly<Record<string, ParameterKind>>
-  required: readonly string[]
+function formatChoices(choices: readonly string[]): string {
+  if (choices.length <= 1) return choices.join('')
+  return `${choices.slice(0, -1).join(', ')}, or ${choices[choices.length - 1]}`
 }
 
-const COMMON_POSITION = {
-  chain: 'number',
-  wallet: 'address',
-  pool: 'address',
-  position: 'integer_string',
-} as const
-
-const ACTION_SPECS = {
-  stocks: { required: ['chain'], allowed: { chain: 'number', wallet: 'address' } },
-  stock_buy: { required: ['chain', 'wallet', 'stock', 'amount'], allowed: { chain: 'number', wallet: 'address', stock: 'string', amount: 'string', slippage: 'number' } },
-  stock_sell: { required: ['chain', 'wallet', 'stock', 'amount'], allowed: { chain: 'number', wallet: 'address', stock: 'string', amount: 'string', slippage: 'number' } },
-  index_rebalance: { required: ['chain', 'wallet', 'allocations'], allowed: { chain: 'number', wallet: 'address', allocations: 'string', cash: 'string', slippage: 'number' } },
-  deposit: {
-    required: ['chain', 'wallet'],
-    allowed: {
-      chain: 'number',
-      wallet: 'address',
-      pool: 'address',
-      token0: 'string',
-      token1: 'string',
-      pool_type: 'string',
-      tick_spacing: 'number',
-      amount0: 'string',
-      amount1: 'string',
-      price_lower: 'number',
-      price_upper: 'number',
-      tick_lower: 'number',
-      tick_upper: 'number',
-      initial_price: 'number',
-      slippage: 'number',
-      deadline_minutes: 'number',
-      use_decimals: 'boolean',
-    },
-  },
-  positions: {
-    required: ['chain'],
-    allowed: { chain: 'number', wallet: 'address', owner: 'address' },
-  },
-  pools: {
-    required: ['chain'],
-    allowed: {
-      chain: 'number',
-      token0: 'string',
-      token1: 'string',
-      pool_type: 'string',
-      full: 'boolean',
-      limit: 'number',
-    },
-  },
-  epochs_latest: {
-    required: ['chain'],
-    allowed: { chain: 'number', pool_type: 'string' },
-  },
-  epochs: {
-    required: ['chain', 'lp'],
-    allowed: {
-      chain: 'number',
-      lp: 'address',
-      pool_type: 'string',
-      limit: 'number',
-      offset: 'number',
-    },
-  },
-  withdraw: {
-    required: ['chain', 'wallet'],
-    allowed: {
-      ...COMMON_POSITION,
-      fraction: 'decimal_string',
-      burn: 'boolean',
-      collect: 'boolean',
-      unwrap_native: 'boolean',
-      slippage: 'number',
-      deadline_minutes: 'number',
-    },
-  },
-  stake: { required: ['chain', 'wallet'], allowed: COMMON_POSITION },
-  unstake: {
-    required: ['chain', 'wallet'],
-    allowed: { ...COMMON_POSITION, amount: 'string' },
-  },
-  claim_emissions: { required: ['chain', 'wallet'], allowed: COMMON_POSITION },
-  claim_fees: {
-    required: ['chain', 'wallet'],
-    allowed: {
-      ...COMMON_POSITION,
-      burn: 'boolean',
-      unwrap_native: 'boolean',
-    },
-  },
-  create_venft: {
-    required: ['chain', 'wallet', 'amount', 'lock_duration_seconds'],
-    allowed: {
-      chain: 'number',
-      wallet: 'address',
-      amount: 'string',
-      lock_duration_seconds: 'number',
-      use_decimals: 'boolean',
-    },
-  },
-  quote: {
-    required: ['chain', 'from_token', 'to_token', 'amount'],
-    allowed: {
-      chain: 'number',
-      from_token: 'string',
-      to_token: 'string',
-      amount: 'string',
-      use_decimals: 'boolean',
-    },
-  },
-  swap: {
-    required: ['chain', 'wallet', 'from_token', 'to_token', 'amount'],
-    allowed: {
-      chain: 'number',
-      wallet: 'address',
-      from_token: 'string',
-      to_token: 'string',
-      amount: 'string',
-      slippage: 'number',
-      use_decimals: 'boolean',
-    },
-  },
-} satisfies Record<SugarAction, ActionSpec>
-
-const POOL_TYPES = new Set(['cl', 'stable', 'volatile'])
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 const PRIVATE_KEY_PATTERN = /^0x[0-9a-fA-F]{64}$/
-const INTEGER_PARAMETERS = new Set([
-  'chain',
-  'limit',
-  'offset',
-  'tick_lower',
-  'tick_spacing',
-  'tick_upper',
-  'lock_duration_seconds',
-])
 const POSITION_ACTIONS = new Set<SugarAction>([
   'withdraw',
   'stake',
@@ -166,10 +33,10 @@ const POSITION_ACTIONS = new Set<SugarAction>([
 ])
 
 function validateParameter<T>(
-  name: string,
-  kind: ParameterKind,
+  spec: ParameterSpec,
   value: T,
 ): SugarParameter {
+  const { name, kind } = spec
   if (kind === 'address') {
     if (!Predicate.isString(value) || !ADDRESS.test(value)) {
       throw new Error(`${name} must be a 20-byte 0x address`)
@@ -180,9 +47,18 @@ function validateParameter<T>(
     if (!Predicate.isBoolean(value)) throw new Error(`${name} must be a boolean`)
     return value
   }
-  if (kind === 'number') {
+  if (kind === 'number' || kind === 'integer') {
     if (!Predicate.isNumber(value) || !Number.isFinite(value)) {
       throw new Error(`${name} must be a finite number`)
+    }
+    if (kind === 'integer' && !Number.isInteger(value)) {
+      throw new Error(`${name} must be an integer`)
+    }
+    return value
+  }
+  if (kind === 'choice') {
+    if (!Predicate.isString(value) || !spec.choices?.includes(value)) {
+      throw new Error(`${name} must be ${formatChoices(spec.choices ?? [])}`)
     }
     return value
   }
@@ -221,16 +97,16 @@ export function validateSugarRequest<T>(
     throw new Error(`Unsupported Sugar action: ${action}`)
   if (!Predicate.isObject(raw)) throw new Error('Sugar parameters must be an object')
 
-  const spec: ActionSpec = ACTION_SPECS[action]
+  const parameters = requestParameters(action)
   const output: SugarParameters = {}
   for (const [name, value] of Object.entries(raw)) {
-    const kind = spec.allowed[name]
-    if (!kind) throw new Error(`Unsupported parameter for ${action}: ${name}`)
+    const spec = parameters.find((entry) => entry.name === name)
+    if (!spec) throw new Error(`Unsupported parameter for ${action}: ${name}`)
     if (value !== undefined && value !== null)
-      output[name] = validateParameter(name, kind, value)
+      output[name] = validateParameter(spec, value)
   }
-  for (const name of spec.required) {
-    if (!(name in output)) throw new Error(`${action} requires ${name}`)
+  for (const spec of parameters) {
+    if (spec.required && !(spec.name in output)) throw new Error(`${action} requires ${spec.name}`)
   }
   if (action === 'create_venft') {
     const duration = output.lock_duration_seconds
@@ -248,12 +124,6 @@ export function validateSugarRequest<T>(
     throw new Error(
       'chain must be one of 10, 130, 252, 1135, 1868, 5330, 8453, 34443, 42220, or 57073',
     )
-  }
-  for (const name of INTEGER_PARAMETERS) {
-    const value = output[name]
-    if (value !== undefined && !Number.isInteger(value)) {
-      throw new Error(`${name} must be an integer`)
-    }
   }
   if (
     Predicate.isNumber(output.limit) &&
@@ -279,10 +149,6 @@ export function validateSugarRequest<T>(
     output.deadline_minutes <= 0
   ) {
     throw new Error('deadline_minutes must be positive')
-  }
-  const poolType = output.pool_type
-  if (poolType !== undefined && (!Predicate.isString(poolType) || !POOL_TYPES.has(poolType))) {
-    throw new Error('pool_type must be cl, stable, or volatile')
   }
   if (
     action === 'positions' &&

@@ -76,6 +76,7 @@ function BrowseList(props: {
   reload: () => void
   empty: string
   banner?: ReactNode
+  createPool?: () => void
 }) {
   const app = useApp()
   const [filter, setFilter] = useState('')
@@ -116,6 +117,7 @@ function BrowseList(props: {
     if (app.dialogOpen) return
     if (key.name === 'escape') return app.pop()
     if (key.ctrl && key.name === 'r') return props.reload()
+    if (key.ctrl && key.name === 'n' && props.createPool) return props.createPool()
     if (key.name === 'up') return select(selectedRef.current - 1)
     if (key.name === 'down') return select(selectedRef.current + 1)
     if (key.name === 'pageup') return select(selectedRef.current - 10)
@@ -131,6 +133,7 @@ function BrowseList(props: {
   const hints = [
     { key: '↑↓', label: 'move' },
     { key: 'enter', label: 'actions' },
+    ...(props.createPool ? [{ key: 'ctrl+n', label: 'create pool' }] : []),
     { key: 'ctrl+r', label: 'refresh' },
     { key: 'esc', label: 'back' },
   ]
@@ -256,6 +259,7 @@ export function PoolsScreen() {
       freshness={freshness}
       reload={reload}
       empty="No pools matched"
+      createPool={() => app.push({ name: 'action', action: 'deposit' })}
     />
   )
 }

@@ -1,6 +1,7 @@
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as Command from 'effect/unstable/cli/Command'
+import * as Flag from 'effect/unstable/cli/Flag'
 import type { Address } from 'viem'
 import {
   confirmPrompt,
@@ -14,6 +15,7 @@ import {
   walletDir,
 } from '../wallet'
 import { fromPromise } from './run-action'
+import { chain } from './flags'
 
 const passphraseFromEnvOrPrompt = Effect.fn('AeroCli.passphraseFromEnvOrPrompt')(function* (label: string) {
   const env = process.env.SUGAR_WALLET_PASSPHRASE
@@ -53,24 +55,33 @@ const createOrRestoreWallet = Effect.fn('AeroCli.createOrRestoreWallet')(functio
   yield* Console.log(`Wallet ${restore ? 'restored' : 'created'}: ${address} (sealed with scrypt + AES-256-GCM, stored in the ${backend})`)
 })
 
-const connect = Command.make('connect', {}, Effect.fn(function* () {
+const connect = Command.make('connect', {
+  browser: Flag.boolean('browser').pipe(Flag.withDescription('Connect Rabby or another browser extension through a local page')),
+  chain,
+}, Effect.fn(function* (options) {
+  if (options.browser) {
+    const { connectBrowserWallet } = yield* Effect.promise(() => import('../browser-wallet'))
+    const record = yield* fromPromise(() => connectBrowserWallet(console.log, options.chain))
+    yield* Console.log(`Selected ${record.peer}: ${record.address}. Transaction commands will reopen the browser for approval. Use aero tui to keep one connection open.`)
+    return
+  }
   const { connectWalletConnect } = yield* Effect.promise(() => import('../walletconnect'))
-  const record = yield* fromPromise(() => connectWalletConnect(console.log))
+  const record = yield* fromPromise(() => connectWalletConnect(console.log, options.chain))
   yield* Console.log(`Connected ${record.peer ?? 'wallet'}: ${record.address} (chains: ${record.chains.join(', ')})`)
-})).pipe(Command.withDescription('Pair a browser-extension or mobile wallet over WalletConnect'))
+})).pipe(Command.withDescription('Pair over WalletConnect, or use --browser for Rabby and other browser extensions'))
 
 const create = Command.make('create', {}, Effect.fn(function* () {
   yield* createOrRestoreWallet(false)
-})).pipe(Command.withDescription('Generate a wallet; the mnemonic is encrypted (scrypt + AES-256-GCM) and stored in the macOS Keychain (file fallback elsewhere)'))
+})).pipe(Command.withDescription('Generate a local wallet; the recovery phrase is encrypted with your passphrase (see: aero guide wallet)'))
 
 const restore = Command.make('restore', {}, Effect.fn(function* () {
   yield* createOrRestoreWallet(true)
-})).pipe(Command.withDescription('Import an existing mnemonic into the encrypted store'))
+})).pipe(Command.withDescription('Import an existing recovery phrase into the encrypted local wallet'))
 
 const status = Command.make('status', {}, Effect.fn(function* () {
   const active = getActiveWallet()
   if (!active) {
-    yield* Console.log('No wallet configured. Run: aero wallet connect (WalletConnect) or aero wallet create / restore (local).')
+    yield* Console.log('No wallet configured. Run: aero wallet connect --browser, aero wallet connect (WalletConnect), or aero wallet create / restore (local).')
     return
   }
   if (active.source === 'walletconnect') {
@@ -81,14 +92,20 @@ const status = Command.make('status', {}, Effect.fn(function* () {
     }
     return
   }
+  if (active.source === 'browser') {
+    yield* Console.log(`Selected wallet: ${active.address} via ${active.peer} in browser. Signing requires an open browser connection.`)
+    return
+  }
   yield* Console.log(`Active wallet: ${active.address} (local encrypted wallet)`)
 })).pipe(Command.withDescription('Show the active wallet'))
 
 const disconnect = Command.make('disconnect', {}, Effect.fn(function* () {
   const { disconnectWalletConnect } = yield* Effect.promise(() => import('../walletconnect'))
+  const { disconnectBrowserWallet } = yield* Effect.promise(() => import('../browser-wallet'))
+  const browserRemoved = disconnectBrowserWallet()
   const removed = yield* fromPromise(() => disconnectWalletConnect())
-  yield* Console.log(removed ? 'WalletConnect session disconnected.' : 'No WalletConnect session to disconnect.')
-})).pipe(Command.withDescription('Drop the WalletConnect session'))
+  yield* Console.log(removed || browserRemoved ? 'External wallet disconnected.' : 'No external wallet to disconnect.')
+})).pipe(Command.withDescription('Disconnect the browser wallet and WalletConnect session'))
 
 const remove = Command.make('remove', {}, Effect.fn(function* () {
   const wallet = loadLocalWallet()

@@ -3,7 +3,7 @@ import * as Effect from 'effect/Effect'
 import type { Address } from 'viem'
 import { abis } from './abis'
 import { addressKey, normalizeAddress, tokenContractAddress, tupleValues } from './helpers'
-import { makeReadCache } from './internal/caches'
+import type { ClientLookup } from './internal/caches'
 import type { SugarContext } from './internal/context'
 import { clientCall } from './internal/interop'
 import { veNftFromTuple, veNftRewardFromTuple } from './models'
@@ -28,12 +28,10 @@ export function requireVeSugar(ctx: SugarContext): Address {
   return ctx.settings.veSugarContractAddress
 }
 
-export const getVeNftContracts = Effect.fn('Sugar.VeNfts.getVeNftContracts')(function* (
-  ctx: SugarContext,
-) {
-  const veSugar = requireVeSugar(ctx)
-  const cache = ctx.veNftContractsCache ??= yield* makeReadCache((_key: 'contracts') =>
-    Effect.all([
+export const veNftContractsLookup: ClientLookup<'contracts', VeNftContracts> =
+  Effect.fn('Sugar.VeNfts.veNftContractsLookup')(function* (ctx: SugarContext, _key: 'contracts') {
+    const veSugar = requireVeSugar(ctx)
+    return yield* Effect.all([
       ctx.read<Address>(veSugar, abis.veSugar, 'voter'),
       ctx.read<Address>(veSugar, abis.veSugar, 've'),
       ctx.read<Address>(veSugar, abis.veSugar, 'token'),
@@ -46,9 +44,14 @@ export const getVeNftContracts = Effect.fn('Sugar.VeNfts.getVeNftContracts')(fun
         governanceToken: normalizeAddress(governanceToken),
         rewardsDistributor: normalizeAddress(rewardsDistributor),
       })),
-    ),
-  )
-  return yield* Cache.get(cache, 'contracts')
+    )
+  })
+
+export const getVeNftContracts = Effect.fn('Sugar.VeNfts.getVeNftContracts')(function* (
+  ctx: SugarContext,
+) {
+  requireVeSugar(ctx)
+  return yield* Cache.get(ctx.readCaches.veNftContracts, 'contracts')
 })
 
 export const getVeNfts = Effect.fn('Sugar.VeNfts.getVeNfts')(function* (
