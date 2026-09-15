@@ -45,7 +45,7 @@ export const resolveSigner = Effect.fn('AeroCli.resolveSigner')(function* () {
   const local = loadLocalWallet()
   if (!local) throw new Error('no wallet configured; run: aero wallet connect or aero wallet create')
   const passphrase = process.env.SUGAR_WALLET_PASSPHRASE
-    ?? Redacted.value(yield* Prompt.password({ message: 'Wallet passphrase' }))
+    ?? Redacted.value(yield* Prompt.Password({ message: 'Wallet passphrase' }))
   return localMnemonicSigner(openSecret(local.sealed, passphrase))
 })
 
@@ -88,7 +88,7 @@ export const runTxAction = Effect.fn('AeroCli.runTxAction')(function* (
   yield* Console.log(`Chain ${plan.chainId}, sender ${plan.sender}\n${renderPlanSummary(action, result, steps)}`)
   if (!options.yes) {
     if (!process.stdin.isTTY) throw new Error('no TTY for the confirmation prompt; pass --yes or --dry-run')
-    const confirmed = yield* Prompt.confirm({ message: 'Sign and broadcast?' })
+    const confirmed = yield* Prompt.Confirm({ message: 'Sign and broadcast?' })
     if (!confirmed) {
       yield* Console.log('Aborted; nothing was sent.')
       return

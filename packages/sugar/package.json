@@ -34,12 +34,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.0-beta.107",
+    "@effect/platform-bun": "4.0.0-rc.115",
     "@opentui/core": "0.5.1",
     "@opentui/react": "0.5.1",
     "@scure/bip39": "1.6.0",
     "@walletconnect/sign-client": "2.23.10",
-    "effect": "4.0.0-beta.107",
+    "effect": "4.0.0-rc.115",
     "react": "19.2.3",
     "unstorage": "1.17.5",
     "uqr": "0.1.3",

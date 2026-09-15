@@ -42,7 +42,7 @@ import { fromPromise } from './run-action'
  * `--execute` (with the local encrypted wallet unlocked at startup) signs.
  */
 
-const configFlag = Flag.string('config').pipe(
+const configFlag = Flag.String('config').pipe(
   Flag.optional,
   Flag.withMetavar('<path>'),
   Flag.withDescription(`ALM config file (default ${almConfigPath()})`),
@@ -61,10 +61,10 @@ const resolveLocalSigner = Effect.fn('AeroCli.resolveLocalSigner')(function* () 
 
 const serve = Command.make('serve', {
   config: configFlag,
-  execute: Flag.boolean('execute').pipe(Flag.withDescription('Sign and broadcast rebalances (default: dry-run, print/notify only)')),
-  once: Flag.boolean('once').pipe(Flag.withDescription('Run a single pass and exit (useful for cron and testing)')),
-  interval: Flag.integer('interval').pipe(Flag.optional, Flag.withDescription('Override the poll interval in seconds')),
-  allowUnsimulated: Flag.boolean('allow-unsimulated').pipe(Flag.withDescription('Broadcast even when the RPC cannot pre-simulate via eth_simulateV1')),
+  execute: Flag.Boolean('execute').pipe(Flag.withDefault(false), Flag.withDescription('Sign and broadcast rebalances (default: dry-run, print/notify only)')),
+  once: Flag.Boolean('once').pipe(Flag.withDefault(false), Flag.withDescription('Run a single pass and exit (useful for cron and testing)')),
+  interval: Flag.Int('interval').pipe(Flag.optional, Flag.withDescription('Override the poll interval in seconds')),
+  allowUnsimulated: Flag.Boolean('allow-unsimulated').pipe(Flag.withDefault(false), Flag.withDescription('Broadcast even when the RPC cannot pre-simulate via eth_simulateV1')),
   wallet: flags.wallet,
 }, Effect.fn(function* (config) {
   const almConfig = loadAlmConfig(optionalValue(config.config))
@@ -123,9 +123,9 @@ const serve = Command.make('serve', {
 const init = Command.make('init', {
   chain: flags.chain,
   wallet: flags.wallet,
-  positionId: Flag.string('position-id').pipe(Flag.optional, Flag.withDescription('Only configure this NFT, required when a pool has multiple positions')),
-  strategy: Flag.choice('strategy', ALM_STRATEGIES).pipe(Flag.optional, Flag.withDescription('Strategy for every scaffolded position (default original)')),
-  force: Flag.boolean('force').pipe(Flag.withDescription('Overwrite an existing config file')),
+  positionId: Flag.String('position-id').pipe(Flag.optional, Flag.withDescription('Only configure this NFT, required when a pool has multiple positions')),
+  strategy: Flag.Literals('strategy', ALM_STRATEGIES).pipe(Flag.optional, Flag.withDescription('Strategy for every scaffolded position (default original)')),
+  force: Flag.Boolean('force').pipe(Flag.withDefault(false), Flag.withDescription('Overwrite an existing config file')),
   config: configFlag,
 }, Effect.fn(function* (config) {
   const path = optionalValue(config.config) ?? almConfigPath()
@@ -170,11 +170,11 @@ const init = Command.make('init', {
  * with a single signature at app.safe.global.
  */
 const safeSetup = Command.make('safe-setup', {
-  safe: Flag.string('safe').pipe(Flag.withMetavar('<0x address>'), Flag.withDescription('The Safe that owns (or will own) the CL positions')),
-  keeper: Flag.string('keeper').pipe(Flag.optional, Flag.withMetavar('<0x address>'), Flag.withDescription('Keeper address (defaults to the local encrypted wallet)')),
-  role: Flag.string('role').pipe(Flag.withDefault(DEFAULT_ROLE_KEY), Flag.withDescription('Role name (bytes32-encoded on-chain)')),
-  saltNonce: Flag.string('salt-nonce').pipe(Flag.withDefault('0'), Flag.withDescription('ModuleProxyFactory salt nonce (change to deploy a fresh modifier)')),
-  out: Flag.string('out').pipe(Flag.optional, Flag.withMetavar('<path>'), Flag.withDescription('Output path for the Transaction Builder JSON (default ./aero-alm-safe-setup.json)')),
+  safe: Flag.String('safe').pipe(Flag.withMetavar('<0x address>'), Flag.withDescription('The Safe that owns (or will own) the CL positions')),
+  keeper: Flag.String('keeper').pipe(Flag.optional, Flag.withMetavar('<0x address>'), Flag.withDescription('Keeper address (defaults to the local encrypted wallet)')),
+  role: Flag.String('role').pipe(Flag.withDefault(DEFAULT_ROLE_KEY), Flag.withDescription('Role name (bytes32-encoded on-chain)')),
+  saltNonce: Flag.String('salt-nonce').pipe(Flag.withDefault('0'), Flag.withDescription('ModuleProxyFactory salt nonce (change to deploy a fresh modifier)')),
+  out: Flag.String('out').pipe(Flag.optional, Flag.withMetavar('<path>'), Flag.withDescription('Output path for the Transaction Builder JSON (default ./aero-alm-safe-setup.json)')),
   config: configFlag,
 }, Effect.fn(function* (config) {
   assertSafeAlmSupported()

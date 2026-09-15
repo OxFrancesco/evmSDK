@@ -34,22 +34,22 @@ export function runtimeLayer(options: RuntimeOptions) {
 }
 
 export const environmentOptions = Effect.fn('Runtime.configuration')(function* () {
-  const database = yield* Config.string('EVM_DATABASE').pipe(Config.withDefault(join(homedir(), '.local', 'share', 'bee-evm', 'operations.sqlite')))
-  const rpc = yield* Config.option(Config.string('EVM_RPC_URL'))
-  const explorer = yield* Config.option(Config.redacted('EVM_ETHERSCAN_API_KEY'))
-  const rpcFallbackConfig = yield* Config.option(Config.string('EVM_RPC_URLS'))
+  const database = yield* Config.String('EVM_DATABASE').pipe(Config.withDefault(join(homedir(), '.local', 'share', 'bee-evm', 'operations.sqlite')))
+  const rpc = yield* Config.option(Config.String('EVM_RPC_URL'))
+  const explorer = yield* Config.option(Config.Redacted('EVM_ETHERSCAN_API_KEY'))
+  const rpcFallbackConfig = yield* Config.option(Config.String('EVM_RPC_URLS'))
   const rpcFallbacks = new Map<number, ReadonlyArray<string>>()
   if (Option.isSome(rpcFallbackConfig)) {
     const decoded = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Array(Schema.String))))(rpcFallbackConfig.value).pipe(Effect.mapError(() => new EvmError({ code: 'InvalidInput', message: 'EVM_RPC_URLS must be JSON mapping chain IDs to RPC URL arrays.', retryable: false })))
     for (const [chain, urls] of Object.entries(decoded)) rpcFallbacks.set(Number(chain), urls)
   }
-  const policy = yield* Config.option(Config.string('EVM_POLICY'))
-  const socketApiKey = yield* Config.option(Config.redacted('SOCKET_API_KEY'))
-  const socketAffiliate = yield* Config.option(Config.string('SOCKET_AFFILIATE'))
-  const socketUrl = yield* Config.option(Config.string('SOCKET_API_URL'))
-  const walletProjectId = yield* Config.option(Config.string('WALLETCONNECT_PROJECT_ID'))
-  const smartWalletUrl = yield* Config.option(Config.string('EVM_SMART_WALLET_URL'))
-  const key = yield* Config.option(Config.redacted('EVM_PRIVATE_KEY'))
+  const policy = yield* Config.option(Config.String('EVM_POLICY'))
+  const socketApiKey = yield* Config.option(Config.Redacted('SOCKET_API_KEY'))
+  const socketAffiliate = yield* Config.option(Config.String('SOCKET_AFFILIATE'))
+  const socketUrl = yield* Config.option(Config.String('SOCKET_API_URL'))
+  const walletProjectId = yield* Config.option(Config.String('WALLETCONNECT_PROJECT_ID'))
+  const smartWalletUrl = yield* Config.option(Config.String('EVM_SMART_WALLET_URL'))
+  const key = yield* Config.option(Config.Redacted('EVM_PRIVATE_KEY'))
   let signer: LocalAccount | undefined
   if (Option.isSome(key)) {
     const privateKey = yield* Schema.decodeUnknownEffect(Hash)(Redacted.value(key.value)).pipe(Effect.mapError(() => new EvmError({ code: 'InvalidInput', message: 'EVM_PRIVATE_KEY must contain a valid 32-byte private key.', retryable: false })))

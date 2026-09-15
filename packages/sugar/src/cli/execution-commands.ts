@@ -15,7 +15,7 @@ const list = Command.make('list', {}, Effect.fn(function* () {
   yield* Console.log(JSON.stringify(entries, null, 2))
 })).pipe(Command.withDescription('List persisted executions and known transaction hashes'))
 
-const resume = Command.make('resume', { id: Flag.string('id') }, Effect.fn(function* ({ id }) {
+const resume = Command.make('resume', { id: Flag.String('id') }, Effect.fn(function* ({ id }) {
   const store = createFileJournalStore()
   const entry = store.load(id)
   if (!entry) throw new Error('Execution not found')
@@ -23,13 +23,13 @@ const resume = Command.make('resume', { id: Flag.string('id') }, Effect.fn(funct
     throw new Error('ALM phases cannot be resumed independently; use aero alm recover and manually repair the cycle')
   }
   yield* Console.log(`Chain ${entry.plan.chainId}, sender ${entry.plan.sender}\n${JSON.stringify(entry.steps, null, 2)}`)
-  if (!(yield* Prompt.confirm({ message: 'Reconcile receipts and continue unsubmitted steps of this reviewed plan?' }))) return
+  if (!(yield* Prompt.Confirm({ message: 'Reconcile receipts and continue unsubmitted steps of this reviewed plan?' }))) return
   const signer = yield* resolveSigner()
   const hashes = yield* fromPromise(() => sendPlan({ plan: entry.plan, signer, store }))
   yield* Console.log(JSON.stringify({ status: 'complete', hashes }))
 })).pipe(Command.withDescription('Resume a saved plan without resending submitted transactions'))
 
-const cancel = Command.make('cancel', { id: Flag.string('id') }, Effect.fn(function* ({ id }) {
+const cancel = Command.make('cancel', { id: Flag.String('id') }, Effect.fn(function* ({ id }) {
   const store = createFileJournalStore()
   const entry = store.load(id)
   if (!entry) throw new Error('Execution not found')
@@ -38,7 +38,7 @@ const cancel = Command.make('cancel', { id: Flag.string('id') }, Effect.fn(funct
     const current = store.load(id)
     if (!current || current.status !== 'active') throw new Error('Execution is not active')
     if (current.steps.some((step) => step.kind === 'submitted' || step.kind === 'submitting')) throw new Error('Cannot cancel an unknown or pending submission; reconcile it first')
-    if (!(yield* Prompt.confirm({ message: 'Cancel the remaining unsubmitted steps? Confirmed transactions cannot be undone.' }))) return
+    if (!(yield* Prompt.Confirm({ message: 'Cancel the remaining unsubmitted steps? Confirmed transactions cannot be undone.' }))) return
     store.save({ ...current, status: 'cancelled' })
     yield* Console.log('Unsubmitted steps cancelled.')
   } finally {

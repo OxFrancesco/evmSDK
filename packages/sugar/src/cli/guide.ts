@@ -334,7 +334,7 @@ Also handy: every command supports --wizard for interactive, prompted input.`,
 } satisfies Record<GuideTopic, string>
 
 export const guideCommand = Command.make('guide', {
-  topic: Argument.choice('topic', GUIDE_TOPICS).pipe(
+  topic: Argument.Literals('topic', GUIDE_TOPICS).pipe(
     Argument.optional,
     Argument.withDescription('Guide to read (omit to list all topics)'),
   ),

@@ -90,7 +90,7 @@ function frameRows(state: PickerState, options: PickerOptions, columns: number):
 }
 export function tokenPickPrompt(options: PickerOptions): Prompt.Prompt<TokenPick> {
   const initialState: PickerState = { query: options.initialQuery ?? '', index: 0 }
-  return Prompt.custom(initialState, {
+  return Prompt.Custom(initialState, {
     render: (state, action) =>
       Effect.gen(function* () {
         const terminal = yield* Terminal.Terminal

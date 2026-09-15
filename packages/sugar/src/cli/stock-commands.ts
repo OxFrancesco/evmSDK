@@ -8,8 +8,8 @@ import { actionCommand } from './action-commands'
 import { runTxAction } from './run-action'
 import { deleteIndex, listIndices, readIndex, saveIndex, type StockIndex } from '../stocks/indices'
 
-const name = Flag.string('name').pipe(Flag.withMetavar('<name>'), Flag.withDescription('Saved index name'))
-const allocations = Flag.string('allocations').pipe(
+const name = Flag.String('name').pipe(Flag.withMetavar('<name>'), Flag.withDescription('Saved index name'))
+const allocations = Flag.String('allocations').pipe(
   Flag.withMetavar('<SYMBOL=percent,...>'),
   Flag.withDescription('Target percentages, e.g. NVDAc=50,AAPLc=50. Use 0 to exit a stock.'),
 )
@@ -47,8 +47,8 @@ export const indexCommand = Command.make('index').pipe(
       chain: flags.chain,
       wallet: flags.wallet,
       name,
-      cash: Flag.string('cash').pipe(Flag.withDefault('0'), Flag.withMetavar('<USDC>'), Flag.withDescription('USDC added on top of existing holdings (default 0)')),
-      slippage: Flag.float('slippage').pipe(Flag.optional, Flag.withDescription('Slippage tolerance between 0 and 1 (0.01 = 1%)')),
+      cash: Flag.String('cash').pipe(Flag.withDefault('0'), Flag.withMetavar('<USDC>'), Flag.withDescription('USDC added on top of existing holdings (default 0)')),
+      slippage: Flag.Finite('slippage').pipe(Flag.optional, Flag.withDescription('Slippage tolerance between 0 and 1 (0.01 = 1%)')),
       yes: flags.yes,
       dryRun: flags.dryRun,
     }, Effect.fn(function* (config) {

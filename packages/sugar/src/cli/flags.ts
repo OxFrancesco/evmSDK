@@ -7,23 +7,25 @@ import type { SugarParameter, SugarParameters } from '../contracts'
 /** Default chain for every command: Base, home of Aerodrome. */
 export const DEFAULT_CHAIN = 8453
 
-export const chain = Flag.integer('chain').pipe(
+export const chain = Flag.Int('chain').pipe(
   Flag.withDefault(DEFAULT_CHAIN),
   Flag.withDescription(CHAIN_PARAMETER.description),
 )
 
-export const wallet = Flag.string('wallet').pipe(
+export const wallet = Flag.String('wallet').pipe(
   Flag.optional,
   Flag.withMetavar('<0x address>'),
   Flag.withDescription(WALLET_PARAMETER.description),
 )
 
-export const yes = Flag.boolean('yes').pipe(
+export const yes = Flag.Boolean('yes').pipe(
+  Flag.withDefault(false),
   Flag.withAlias('y'),
   Flag.withDescription('Skip the sign-and-broadcast confirmation prompt'),
 )
 
-export const dryRun = Flag.boolean('dry-run').pipe(
+export const dryRun = Flag.Boolean('dry-run').pipe(
+  Flag.withDefault(false),
   Flag.withDescription('Always print the unsigned plan, never broadcast'),
 )
 
@@ -46,16 +48,16 @@ export function flagFor(spec: ParameterSpec): Flag.Flag<FlagValue> {
   const name = spec.name.replaceAll('_', '-')
   if (spec.kind === 'boolean') {
     return spec.default
-      ? Flag.boolean(`no-${name}`).pipe(Flag.withDescription(`Don't ${spec.description.charAt(0).toLowerCase()}${spec.description.slice(1)}`))
-      : Flag.boolean(name).pipe(Flag.withDescription(spec.description))
+      ? Flag.Boolean(`no-${name}`).pipe(Flag.withDefault(false), Flag.withDescription(`Don't ${spec.description.charAt(0).toLowerCase()}${spec.description.slice(1)}`))
+      : Flag.Boolean(name).pipe(Flag.withDefault(false), Flag.withDescription(spec.description))
   }
   const typed: Flag.Flag<SugarParameter> = spec.kind === 'choice' && spec.choices
-    ? Flag.choice(name, spec.choices)
+    ? Flag.Literals(name, spec.choices)
     : spec.kind === 'integer'
-      ? Flag.integer(name)
+      ? Flag.Int(name)
       : spec.kind === 'number'
-        ? Flag.float(name)
-        : Flag.string(name).pipe(Flag.withMetavar(metavar(spec)))
+        ? Flag.Finite(name)
+        : Flag.String(name).pipe(Flag.withMetavar(metavar(spec)))
   const described = typed.pipe(Flag.withDescription(spec.description))
   return spec.required && spec.kind !== 'token' ? described : Flag.optional(described)
 }

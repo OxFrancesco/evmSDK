@@ -56,7 +56,7 @@ const createOrRestoreWallet = Effect.fn('AeroCli.createOrRestoreWallet')(functio
 })
 
 const connect = Command.make('connect', {
-  browser: Flag.boolean('browser').pipe(Flag.withDescription('Connect Rabby or another browser extension through a local page')),
+  browser: Flag.Boolean('browser').pipe(Flag.withDefault(false), Flag.withDescription('Connect Rabby or another browser extension through a local page')),
   chain,
 }, Effect.fn(function* (options) {
   if (options.browser) {

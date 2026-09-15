@@ -24,7 +24,7 @@ function recoveryContext(id: string) {
   return { state, key, entry, cycle, store, client }
 }
 
-export const almRecoverCommand = Command.make('recover', { id: Flag.string('id') }, Effect.fn(function* ({ id }) {
+export const almRecoverCommand = Command.make('recover', { id: Flag.String('id') }, Effect.fn(function* ({ id }) {
   const release = acquireAlmStateLock()
   try {
     const { cycle, store, client } = recoveryContext(id)
@@ -37,9 +37,9 @@ export const almRecoverCommand = Command.make('recover', { id: Flag.string('id')
 })).pipe(Command.withDescription('Reconcile ALM receipts without submitting or restarting any phase'))
 
 export const almResolveCommand = Command.make('resolve', {
-  id: Flag.string('id'),
-  note: Flag.string('note'),
-  positionId: Flag.string('position-id').pipe(Flag.optional, Flag.withDescription('NFT to track after manual repair, defaults to the recorded replacement or original NFT')),
+  id: Flag.String('id'),
+  note: Flag.String('note'),
+  positionId: Flag.String('position-id').pipe(Flag.optional, Flag.withDescription('NFT to track after manual repair, defaults to the recorded replacement or original NFT')),
 }, Effect.fn(function* ({ id, note, positionId }) {
   const release = acquireAlmStateLock()
   try {
@@ -54,7 +54,7 @@ export const almResolveCommand = Command.make('resolve', {
       throw new Error('Recovery needs an owned, funded CL NFT; rebuild the position and pass --position-id')
     }
     yield* Console.log(`Future ALM cycles will track NFT ${selectedId} in pool ${cycle.pool}`)
-    if (!(yield* Prompt.confirm({ message: 'Have you verified the receipts, balances, NFT ownership and staking, and manually repaired this cycle? Resolving permits future ALM cycles.' }))) return
+    if (!(yield* Prompt.Confirm({ message: 'Have you verified the receipts, balances, NFT ownership and staking, and manually repaired this cycle? Resolving permits future ALM cycles.' }))) return
     const resolved = resolveAlmCycle(cycle, journals, store, note)
     saveAlmState({ ...state, [key]: recoveredPositionState(entry, resolved, position.id) })
     yield* Console.log('Cycle resolved. Unsubmitted steps were cancelled. Attempt cooldowns and caps remain in effect; run aero serve --once in dry-run mode before restarting execution.')
