@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="darkreader-lock" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>evmSDK | Agent-first EVM SDK, CLI, TUI and MCP</title>
+  <meta name="description" content="Read contracts, prepare guarded transactions, connect browser, mobile and smart wallets, bridge with Socket, and drive it all from JSON, a terminal UI or MCP. Highly experimental and unofficial." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://evm.buddytools.org/" />
+  <meta property="og:title" content="evmSDK | Agent-first EVM SDK, CLI, TUI and MCP" />
+  <meta property="og:description" content="Ethereum, Base and configurable EVM chains for agents and humans. Guarded execution, wallets, Socket bridging. Highly experimental and unofficial." />
+  <meta property="og:image" content="https://evm.buddytools.org/page-preview.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="860" />
+  <meta property="og:image:alt" content="evmSDK homepage with a clay terminal, hex tokens, a block stack and an experimental software notice." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="evmSDK | Agent-first EVM toolkit" />
+  <meta name="twitter:description" content="Ethereum and Base from JSON, a terminal UI or MCP. Highly experimental and unofficial." />
+  <meta name="twitter:image" content="https://evm.buddytools.org/page-preview.png" />
+  <meta name="twitter:image:alt" content="evmSDK homepage with a clay terminal, hex tokens, a block stack and an experimental software notice." />
+  <meta name="color-scheme" content="light" />
+  <link rel="canonical" href="https://evm.buddytools.org/" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/style.css" />
+  <script defer src="/bento.js"></script>
+</head>
+<body>
+<main>
+  <div class="topbar">
+    <a class="wordmark" href="/" aria-label="evmSDK home">evm</a>
+    <nav aria-label="Page navigation">
+      <a href="#capabilities">Capabilities</a>
+      <a href="#json">JSON first</a>
+      <a href="https://github.com/OxFrancesco/evmSDK#readme">Docs ↗</a>
+    </nav>
+  </div>
+  <header class="hero">
+    <div>
+      <h1>evmSDK</h1>
+      <p class="intro">Ethereum, Base and any EVM chain you configure. One command catalog shared by an Effect SDK, a JSON CLI, a terminal UI and an MCP server, built so agents can drive it without guessing.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/OxFrancesco/evmSDK">View on GitHub ↗</a>
+        <a class="button" href="#json">See the JSON flow ↓</a>
+      </div>
+    </div>
+    <figure class="scene-figure">
+      <div class="scene-view"><img src="/evm-hero.svg" width="1200" height="1200" alt="Clay terminal with curly braces on a plinth, two hex tokens and a stack of blocks in sea-glass green." fetchpriority="high" /></div>
+    </figure>
+  </header>
+  <aside class="warning" aria-label="Experimental software notice">
+    <p><strong>Highly experimental. Entirely unofficial.</strong>Built with AI coding agents. Bugs and signing mistakes can permanently lose funds. <a href="#experimental">Read the risks before using it.</a></p>
+  </aside>
+  <section class="features" aria-labelledby="capabilities">
+    <h2 id="capabilities">What you can do</h2>
+    <div class="grid">
+      <article class="clay bento discover">
+<div class="tile-visual" aria-hidden="true"><div class="schema-diagram"><code><span>$</span> evm discover</code><div class="schema-rows"><i style="--w:72%"></i><i style="--w:48%"></i><i style="--w:88%"></i><i style="--w:36%"></i></div></div></div>
+<div class="tile-copy"><h3>Discover, then call</h3><p>Every command publishes its input and output schema before you run it.</p><button type="button" class="capability-trigger" popovertarget="capability-1" aria-expanded="false" aria-label="View capabilities"></button><div id="capability-1" class="capability-popup" popover="auto"><button type="button" class="popup-close" popovertarget="capability-1" popovertargetaction="hide" aria-label="Close capabilities">×</button><ul><li><code>discover</code> lists commands with their schemas, error codes and execution conventions.</li><li>Pass arguments with <code>--input</code>, <code>--file</code> or <code>--stdin</code>. Results are JSON; watches stream NDJSON.</li><li>Errors carry a stable code and exit with status 1, so a script or agent can branch on them.</li></ul></div></div>
+</article>
+      <article class="clay bento reads">
+<div class="tile-visual" aria-hidden="true"><svg class="blocks-diagram" viewBox="0 0 240 90"><rect x="10" y="22" width="56" height="46" rx="12"/><rect x="92" y="22" width="56" height="46" rx="12"/><rect x="174" y="22" width="56" height="46" rx="12"/><path class="link" d="M66 45 H92 M148 45 H174"/></svg></div>
+<div class="tile-copy"><h3>Contracts &amp; chain data</h3><p>Inspect, read and decode with an ABI or plain signatures.</p><button type="button" class="capability-trigger" popovertarget="capability-2" aria-expanded="false" aria-label="View capabilities"></button><div id="capability-2" class="capability-popup" popover="auto"><button type="button" class="popup-close" popovertarget="capability-2" popovertargetaction="hide" aria-label="Close capabilities">×</button><ul><li><code>inspect</code>, <code>read</code>, <code>decode</code>, <code>identity</code>, <code>resolve-name</code>, <code>balance</code>, <code>token</code>, <code>block</code>, <code>transaction</code> and <code>logs</code>.</li><li>Supply an ABI or human-readable signatures. Verified ABI discovery needs an Etherscan key.</li><li>Proxy lookup covers the EIP-1967 implementation slot. Log pagination returns a continuation block and offset.</li></ul>
+        <p class="note">Quantities cross JSON as decimal strings. Native values are wei. <code>units</code> refuses to lose precision.</p></div></div>
+</article>
+      <article class="clay bento execution">
+<div class="tile-visual" aria-hidden="true"><div class="pipeline"><span>Prepare</span><b>→</b><span>Simulate</span><b>→</b><span class="hot">Execute</span><b>→</b><span>Status</span></div></div>
+<div class="tile-copy"><h3>Guarded execution</h3><p>Prepare a plan with one idempotency key. Review it. Then execute.</p><button type="button" class="capability-trigger" popovertarget="capability-3" aria-expanded="false" aria-label="View capabilities"></button><div id="capability-3" class="capability-popup" popover="auto"><button type="button" class="popup-close" popovertarget="capability-3" popovertargetaction="hide" aria-label="Close capabilities">×</button><ul><li><code>prepare</code> and <code>prepare-call</code> bind the exact chain, account, target, calldata and value.</li><li><code>execute</code> rechecks chain, account, simulation, expiry and policy. <code>--yolo</code> skips only the approval prompt, for one invocation.</li><li><code>status</code>, <code>wait</code>, <code>cancel</code>, <code>replace</code> and <code>attach-transaction</code> recover interrupted or repriced work.</li></ul>
+        <p class="note">Signed bytes, hash and nonce persist before broadcast. Retrying <code>execute</code> rebroadcasts the same bytes instead of signing again.</p></div></div>
+</article>
+      <article class="clay bento wallets">
+<div class="tile-visual" aria-hidden="true"><div class="wallet-chips"><span>Browser · EIP-6963</span><span>WalletConnect</span><span>Smart · passkey</span></div></div>
+<div class="tile-copy"><h3>Wallets</h3><p>Browser, mobile or Crossmint smart wallet. Keys stay where they were.</p><button type="button" class="capability-trigger" popovertarget="capability-4" aria-expanded="false" aria-label="View capabilities"></button><div id="capability-4" class="capability-popup" popover="auto"><button type="button" class="popup-close" popovertarget="capability-4" popovertargetaction="hide" aria-label="Close capabilities">×</button><ul><li><code>wallet connect --browser</code> discovers injected wallets with EIP-6963 and prefers Rabby. WalletConnect supplies a URI and QR for mobile.</li><li><code>--smart</code> opens a hosted Clerk login and Crossmint smart wallet page. Passkeys still need their owner's approval, even with <code>--yolo</code>.</li><li>The browser bridge binds an exact origin, random token, chain and account, listens on loopback only and never carries JWTs or private keys.</li></ul>
+        <p class="note">Unattended agents use an explicitly provisioned SDK signer or <code>EVM_PRIVATE_KEY</code>. Keys are never CLI arguments and never written to the journal.</p></div></div>
+</article>
+      <article class="clay bento bridge">
+<div class="tile-visual" aria-hidden="true"><div class="swap-diagram"><span class="token token-a">Base</span><svg viewBox="0 0 160 70"><path class="route" d="M8 24 H146 l-13 -12 M152 46 H14 l13 12"/></svg><span class="token token-b">Ethereum</span></div></div>
+<div class="tile-copy"><h3>Swap &amp; bridge</h3><p>Socket routes, bound to one reviewed quote.</p><button type="button" class="capability-trigger" popovertarget="capability-5" aria-expanded="false" aria-label="View capabilities"></button><div id="capability-5" class="capability-popup" popover="auto"><button type="button" class="popup-close" popovertarget="capability-5" popovertargetaction="hide" aria-label="Close capabilities">×</button><ul><li><code>socket-chains</code>, <code>socket-tokens</code> and <code>socket-quote</code> use Socket V3's public endpoint. <code>swap</code> requests a same-chain route.</li><li><code>bridge-prepare</code> pins account, recipient, tokens, amounts, slippage, deadline and calldata. <code>bridge-run</code> executes approval and route in order.</li><li><code>bridge-status</code> and <code>bridge-wait</code> check the destination receipt and ERC-20 transfer before calling settlement verified.</li></ul>
+        <p class="note">Approvals are exact. Workflows are sequential, not atomic. An expired route needs a fresh quote and a new key.</p></div></div>
+</article>
+      <article class="clay bento policy">
+<div class="tile-visual" aria-hidden="true"><div class="budget"><span>Native budget</span><div class="bar"><i></i></div><span>Reserved by allowance</span><div class="bar"><i class="reserved"></i></div></div></div>
+<div class="tile-copy"><h3>Policies, batches &amp; workflows</h3><p>Put limits on chains, recipients, selectors, fees and budgets.</p><button type="button" class="capability-trigger" popovertarget="capability-6" aria-expanded="false" aria-label="View capabilities"></button><div id="capability-6" class="capability-popup" popover="auto"><button type="button" class="popup-close" popovertarget="capability-6" popovertargetaction="hide" aria-label="Close capabilities">×</button><ul><li><code>policy-create</code>, <code>policy-revoke</code> and <code>policies</code> constrain the configured EOA signer. An allowance reserves its full amount.</li><li><code>batch-prepare</code>, <code>batch-run</code> and <code>batch-status</code> use EIP-5792 wallet batches and persist the batch ID before submission.</li><li><code>workflow-create</code>, <code>workflow-run</code>, <code>workflow-status</code>, <code>workflow-cancel</code> and <code>verify-outcome</code> chain steps with checks.</li></ul>
+        <p class="note">Crossmint and wallet batches reject EOA policy bounds. Smart signers need separately configured on-chain scopes.</p></div></div>
+</article>
+      <article class="clay bento monitor">
+<div class="tile-visual" aria-hidden="true"><svg class="chart-diagram" viewBox="0 0 240 90"><path class="baseline" d="M12 76 H228"/><path class="chart-line" d="M12 60 L45 52 L76 56 L110 34 L143 42 L177 20 L211 30 L228 14"/><circle class="pulse" cx="228" cy="14" r="6"/></svg></div>
+<div class="tile-copy"><h3>Monitoring &amp; indexed data</h3><p>Watch addresses and contracts. Cursors survive restarts.</p><button type="button" class="capability-trigger" popovertarget="capability-7" aria-expanded="false" aria-label="View capabilities"></button><div id="capability-7" class="capability-popup" popover="auto"><button type="button" class="popup-close" popovertarget="capability-7" popovertargetaction="hide" aria-label="Close capabilities">×</button><ul><li><code>watch</code> and <code>watch-contract</code> stream NDJSON. <code>monitor-create</code>, <code>monitor-poll</code>, <code>monitor-ack</code>, <code>monitor-pause</code> and <code>monitors</code> keep state across runs.</li><li><code>portfolio</code> exposes indexed holdings with provider and coverage information. Blockscout support is limited to configured networks.</li><li><code>aero</code>, <code>vault</code> and <code>lending</code> read protocols and prepare ABI calls. <code>workspace</code>, <code>save</code> and <code>remove</code> keep contracts you use often.</li></ul>
+        <p class="note">RPC alone cannot enumerate every asset or allowance.</p></div></div>
+</article>
+      <article class="clay bento agents">
+<div class="tile-visual" aria-hidden="true"><div class="command-diagram"><code><span>$</span> evm <b>mcp</b></code><span class="command-cursor" aria-hidden="true"></span></div></div>
+<div class="tile-copy"><h3>TUI, MCP &amp; SDK</h3><p>The same catalog behind a keyboard UI, an MCP server on stdio and typed Effect workflows.</p><button type="button" class="capability-trigger" popovertarget="capability-8" aria-expanded="false" aria-label="View capabilities"></button><div id="capability-8" class="capability-popup" popover="auto"><button type="button" class="popup-close" popovertarget="capability-8" popovertargetaction="hide" aria-label="Close capabilities">×</button><ul><li><code>evm tui</code>: Ctrl+K searches commands, Ctrl+W connects a wallet, Tab moves through fields, Ctrl+R runs, Ctrl+E approves the displayed plan.</li><li><code>evm mcp</code> serves the same command catalog to any MCP client over stdio.</li><li><code>runtimeLayer</code> and <code>dispatch</code> from <code>@beegreat/evm</code> compose in Effect. Streams implement bounded watches and polling.</li></ul>
+        <p class="note">Credentials, custody and signer scopes stay with the caller. The UI does not provision scoped agent signers.</p></div></div>
+</article>
+    </div>
+    <p class="note">Built-in RPCs cover Ethereum, Base, Sepolia, Base Sepolia, Arbitrum, Optimism, Polygon, BNB Chain and local Anvil. Other chains need an RPC URL. Crossmint support uses its own narrower chain map.</p>
+  </section>
+  <section class="demo" aria-labelledby="json">
+    <div class="demo-copy">
+      <h2 id="json">Made for agents, readable by people</h2>
+      <p>Ask what exists. Prepare with one key. Execute only what you reviewed. Check status without side effects.</p>
+      <p class="note">SQLite coordinates processes sharing one journal. An unresolved operation blocks new submissions for that account and chain until you reconcile it.</p>
+    </div>
+    <div class="terminal clay" aria-label="Example evm CLI session">
+      <pre><code><span class="prompt">$</span> evm discover
+<span class="dim">{ "commands": [ "read", "prepare-call", "execute", "status", … ] }</span>
+
+<span class="prompt">$</span> evm prepare-call --file transfer.json
+<span class="dim">{ "id": "op_7f3a…", "state": "unsigned", "chainId": "8453",
+  "fingerprint": "sha256:9c1e…", "simulation": { "success": true } }</span>
+
+<span class="prompt">$</span> evm execute --input '{"id":"op_7f3a…"}' --yolo
+<span class="dim">{ "id": "op_7f3a…", "state": "pending", "hash": "0x4b2d…" }</span>
+
+<span class="prompt">$</span> evm status --input '{"id":"op_7f3a…"}'
+<span class="dim">{ "id": "op_7f3a…", "state": "included", "block": "36211904", "confirmations": "3" }</span></code></pre>
+    </div>
+  </section>
+  <div class="notices clay">
+      <section aria-labelledby="experimental">
+        <h2 id="experimental">Highly experimental. Use at your own risk.</h2>
+        <p>evmSDK is early beta software built with AI coding agents. Expect bugs, incomplete features, incorrect or stale data, and breaking changes. Commands, transaction plans and wallet flows may behave unexpectedly. Do not treat it as production-ready or assume it has passed an independent security audit.</p>
+        <p>Wallet-connected actions can sign and broadcast real transactions. A mistake in an amount, token address, approval, network or transaction can permanently lose funds. A successful simulation is not a guarantee that execution is safe or will succeed. Fee estimates can change after signing. Inclusion, safe and finalized blocks are distinct; call <code>status</code> again to detect reorgs.</p>
+        <p>Start with read-only commands. Prepare first, read the plan, then independently check the network, contract addresses, amounts, slippage and spending approvals before executing. Never retry a timed-out action under a new idempotency key without inspecting the persisted operation. Use a separate wallet with only small amounts you can afford to lose. Never share your seed phrase or private key.</p>
+      </section>
+
+      <section aria-labelledby="unofficial">
+        <h2 id="unofficial">Independent and unofficial.</h2>
+        <p>evmSDK is not affiliated with, endorsed by, sponsored by, or maintained by Aerodrome Finance, Velodrome Finance, Dromos Labs, Mellow Protocol, Socket, Crossmint, WalletConnect or Rabby. It is not an official product or support channel for any of those teams.</p>
+        <p>Protocol and product names describe compatibility or source attribution only. All trademarks belong to their respective owners. Original contributions and third-party material have different license terms. Read the repository's <a href="https://github.com/OxFrancesco/evmSDK/blob/main/LICENSE">LICENSE</a> and <a href="https://github.com/OxFrancesco/evmSDK/blob/main/NOTICE">NOTICE</a> before reuse or redistribution.</p>
+      </section>
+
+  </div>
+  <footer>
+    <a href="https://github.com/OxFrancesco/evmSDK/issues">Report a bug ↗</a>
+    <a href="https://aerocli.buddytools.org/">Aero CLI ↗</a>
+    <a href="https://github.com/OxFrancesco/evmSDK#readme">Documentation ↗</a>
+  </footer>
+</main>
+</body>
+</html>

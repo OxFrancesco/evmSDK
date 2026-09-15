@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" width="1200" height="1200" role="img" aria-labelledby="t">
+  <title id="t">Placeholder clay scene: a terminal block on a plinth with two hex tokens and a stack of blocks.</title>
+  <defs>
+    <linearGradient id="plinth" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#dcebe5"/><stop offset="1" stop-color="#bfd6cd"/></linearGradient>
+    <linearGradient id="term" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1b332f"/><stop offset="1" stop-color="#0d1a18"/></linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#43b8a5"/><stop offset="1" stop-color="#0f8f7c"/></linearGradient>
+    <linearGradient id="ivory" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbf8ee"/><stop offset="1" stop-color="#e6dfc9"/></linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b8e6d9"/><stop offset="1" stop-color="#8dcbbb"/></linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="18" dy="26" stdDeviation="22" flood-color="#5c8c80" flood-opacity=".28"/></filter>
+    <filter id="inner" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="-6" dy="-6" stdDeviation="6" flood-color="#ffffff" flood-opacity=".5"/></filter>
+  </defs>
+  <ellipse cx="600" cy="940" rx="420" ry="46" fill="#5c8c80" opacity=".16"/>
+  <g filter="url(#soft)">
+    <rect x="210" y="760" width="780" height="170" rx="60" fill="url(#plinth)"/>
+    <rect x="240" y="760" width="720" height="60" rx="40" fill="#ecf5f1" opacity=".7"/>
+  </g>
+  <g filter="url(#soft)">
+    <rect x="330" y="290" width="540" height="450" rx="72" fill="url(#term)"/>
+    <rect x="360" y="320" width="480" height="24" rx="12" fill="#2a4640" opacity=".8"/>
+    <path d="M430 470c-16 0-16 12-16 26s0 18-14 18c14 0 14 4 14 18s0 26 16 26" fill="none" stroke="#e6f4ef" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M770 470c16 0 16 12 16 26s0 18 14 18c-14 0-14 4-14 18s0 26-16 26" fill="none" stroke="#e6f4ef" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="510" y="500" width="120" height="20" rx="10" fill="#43b8a5"/>
+    <rect x="510" y="546" width="180" height="20" rx="10" fill="#8dcbbb" opacity=".8"/>
+    <rect x="510" y="592" width="80" height="20" rx="10" fill="#e6dfc9" opacity=".8"/>
+  </g>
+  <g filter="url(#soft)" transform="translate(150 560) rotate(-12)">
+    <path d="M110 0l95 55v110l-95 55-95-55V55z" fill="url(#teal)"/>
+    <path d="M110 34l66 38v76l-66 38-66-38V72z" fill="none" stroke="#e6f4ef" stroke-width="12" stroke-linejoin="round" opacity=".85"/>
+  </g>
+  <g filter="url(#soft)" transform="translate(880 620) rotate(14)">
+    <path d="M95 0l82 47v95l-82 47-82-47V47z" fill="url(#ivory)"/>
+    <circle cx="95" cy="95" r="34" fill="none" stroke="#0f8f7c" stroke-width="12"/>
+  </g>
+  <g filter="url(#soft)">
+    <rect x="900" y="580" width="150" height="70" rx="26" fill="url(#mint)"/>
+    <rect x="920" y="500" width="150" height="70" rx="26" fill="url(#mint)"/>
+    <rect x="940" y="420" width="150" height="70" rx="26" fill="url(#teal)"/>
+  </g>
+</svg>
