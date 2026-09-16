@@ -156,21 +156,61 @@ export function withGasMargin(gas: bigint, marginBps = GAS_MARGIN_BPS): bigint {
   return gas + (gas * marginBps) / 10_000n
 }
 
-export function localMnemonicSigner(mnemonic: string, rpcUrl?: string): PlanSigner {
+export type LocalSignerOptions = {
+  /** How many times to attempt prepareTransactionRequest (default 6). */
+  prepareAttempts?: number
+  /** First backoff delay in ms; doubles per attempt (default 2000). */
+  prepareBaseDelayMs?: number
+}
+
+/** First line of the failure cause, capped and stripped of RPC URLs that may carry keys. */
+function firstLine(cause: unknown): string {
+  // viem puts the node's raw error on `details`, which names the failure
+  // better than the wrapper's generic first line.
+  const details = Predicate.isObject(cause) && 'details' in cause ? cause.details : undefined
+  const text = Predicate.isString(details) && details.length > 0 ? details : cause instanceof Error ? cause.message : String(cause)
+  const line = text.split('\n', 1)[0] ?? text
+  return line.replace(/https?:\/\/\S+/g, '[rpc]').slice(0, 200)
+}
+
+export function localMnemonicSigner(mnemonic: string, rpcUrl?: string, options: LocalSignerOptions = {}): PlanSigner {
   const account = mnemonicToAccount(parseMnemonic(mnemonic))
+  const attempts = options.prepareAttempts ?? 6
+  const baseDelayMs = options.prepareBaseDelayMs ?? 2000
   return {
     address: account.address,
     describe: 'local wallet',
     send: async (transaction, chainId) => {
+      let chain: ReturnType<typeof chainForSettings>
       let client: ReturnType<typeof createWalletClient>
-      let signed: Hex
       try {
-        const chain = chainForSettings(chainId, rpcUrl)
+        chain = chainForSettings(chainId, rpcUrl)
         client = createWalletClient({ account, chain, transport: http() })
-        const request = await client.prepareTransactionRequest({ account, chain, to: transaction.to, data: transaction.data, value: transaction.value })
-        signed = await client.signTransaction({ ...request, gas: request.gas === undefined ? undefined : withGasMargin(request.gas), account })
       } catch (cause) {
         throw new TransactionNotSubmittedError('Local transaction preparation failed before broadcast', { cause })
+      }
+      // Node state can lag right after earlier steps of the same plan confirm
+      // (or a burst gets throttled), and preparation is idempotent, so retry
+      // with backoff before the step is left ready for executions resume.
+      let request: Awaited<ReturnType<typeof client.prepareTransactionRequest>> | undefined
+      let lastError: unknown
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+          request = await client.prepareTransactionRequest({ account, chain, to: transaction.to, data: transaction.data, value: transaction.value })
+          break
+        } catch (cause) {
+          lastError = cause
+          if (attempt < attempts) await new Promise<void>((resolve) => setTimeout(resolve, baseDelayMs * 2 ** (attempt - 1)))
+        }
+      }
+      if (request === undefined) {
+        throw new TransactionNotSubmittedError(`Local transaction preparation failed before broadcast after ${attempts} attempts: ${firstLine(lastError)}`, { cause: lastError })
+      }
+      let signed: Hex
+      try {
+        signed = await client.signTransaction({ ...request, gas: request.gas === undefined ? undefined : withGasMargin(request.gas), account })
+      } catch (cause) {
+        throw new TransactionNotSubmittedError('Local transaction signing failed before broadcast', { cause })
       }
       return client.sendRawTransaction({ serializedTransaction: signed })
     },

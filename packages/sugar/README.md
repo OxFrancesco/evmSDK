@@ -259,6 +259,9 @@ human summary, and ask for confirmation before broadcasting each step
 always prints the unsigned plan. Without a wallet the CLI prints unsigned
 JSON. Local signing adds a 25% margin over the node's gas estimate, because
 swap gas moves with pool state between the estimate and inclusion.
+Preparation (nonce, gas, fees) retries with backoff for about a minute before
+the CLI reports the failure and leaves the step ready for `aero executions
+resume`.
 
 For Rabby, open `aero tui`, choose **Wallet → Connect browser wallet**, then
 select **Connect Rabby Wallet** on the page Aero opens. Approve the connection

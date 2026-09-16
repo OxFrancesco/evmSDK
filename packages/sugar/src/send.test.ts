@@ -120,24 +120,25 @@ test('definite wallet rejection leaves a persisted retryable step without resend
 })
 
 describe('local signer gas margin', () => {
-  test('adds 25% over the estimate and keeps zero at zero', () => {
-    expect(withGasMargin(245_643n)).toBe(307_053n)
-    expect(withGasMargin(0n)).toBe(0n)
-    expect(withGasMargin(100n, 0n)).toBe(100n)
-  })
+  type RpcCall = { id?: number | string | null; method?: string; params?: unknown }
+  type FakeBlock = {
+    number: string; hash: string; parentHash: string; nonce: string; sha3Uncles: string
+    logsBloom: string; transactionsRoot: string; stateRoot: string; receiptsRoot: string
+    miner: string; difficulty: string; totalDifficulty: string; extraData: string; size: string
+    gasLimit: string; gasUsed: string; timestamp: string; baseFeePerGas: string
+    mixHash: string; transactions: string[]; uncles: string[]
+  }
+  type FeeHistory = { oldestBlock: string; baseFeePerGas: string[]; gasUsedRatio: number[]; reward: string[][] }
+  type FakeNodeReply = string | FakeBlock | FeeHistory
 
-  test('signs the estimate plus margin against a fake node', async () => {
-    type RpcCall = { id?: number | string | null; method?: string; params?: unknown }
-    type FakeBlock = {
-      number: string; hash: string; parentHash: string; nonce: string; sha3Uncles: string
-      logsBloom: string; transactionsRoot: string; stateRoot: string; receiptsRoot: string
-      miner: string; difficulty: string; totalDifficulty: string; extraData: string; size: string
-      gasLimit: string; gasUsed: string; timestamp: string; baseFeePerGas: string
-      mixHash: string; transactions: string[]; uncles: string[]
-    }
-    type FeeHistory = { oldestBlock: string; baseFeePerGas: string[]; gasUsedRatio: number[]; reward: string[][] }
-    type FakeNodeReply = string | FakeBlock | FeeHistory
+  const mnemonic = 'test test test test test test test test test test test junk'
+
+  /** Fake JSON-RPC node; eth_estimateGas fails with `execution reverted` for the first `estimateFailures` calls. */
+  function startFakeNode(estimateFailures = 0) {
     let rawTransaction: Hex | undefined
+    let estimateCalls = 0
+    let sendRawCalls = 0
+    let failuresLeft = estimateFailures
     const missed: string[] = []
     const resultFor = (call: RpcCall): FakeNodeReply | undefined => {
       switch (call.method) {
@@ -174,6 +175,14 @@ describe('local signer gas margin', () => {
         const body = await request.json() as RpcCall | RpcCall[]
         const calls = Array.isArray(body) ? body : [body]
         const replies = calls.map((call) => {
+          if (call.method === 'eth_estimateGas') {
+            estimateCalls++
+            if (failuresLeft > 0) {
+              failuresLeft--
+              return { jsonrpc: '2.0', id: call.id ?? null, error: { code: 3, message: 'execution reverted' } }
+            }
+          }
+          if (call.method === 'eth_sendRawTransaction') sendRawCalls++
           const result = resultFor(call)
           return result === undefined
             ? { jsonrpc: '2.0', id: call.id ?? null, error: { code: -32601, message: `unstubbed method ${String(call.method)}` } }
@@ -182,14 +191,61 @@ describe('local signer gas margin', () => {
         return Response.json(Array.isArray(body) ? replies : replies[0])
       },
     })
+    return {
+      url: `http://127.0.0.1:${String(server.port)}`,
+      missed,
+      get rawTransaction() { return rawTransaction },
+      get estimateCalls() { return estimateCalls },
+      get sendRawCalls() { return sendRawCalls },
+      stop: () => { server.stop(true) },
+    }
+  }
+
+  test('adds 25% over the estimate and keeps zero at zero', () => {
+    expect(withGasMargin(245_643n)).toBe(307_053n)
+    expect(withGasMargin(0n)).toBe(0n)
+    expect(withGasMargin(100n, 0n)).toBe(100n)
+  })
+
+  test('signs the estimate plus margin against a fake node', async () => {
+    const node = startFakeNode()
     try {
-      const signer = localMnemonicSigner('test test test test test test test test test test test junk', `http://127.0.0.1:${String(server.port)}`)
+      const signer = localMnemonicSigner(mnemonic, node.url)
       await signer.send({ from: signer.address, to: target, data: '0x', value: 0n }, 8453)
-      expect(missed).toEqual([])
-      if (rawTransaction === undefined) throw new Error('the node recorded no raw transaction')
-      expect(parseTransaction(rawTransaction).gas).toBe(307_053n)
+      expect(node.missed).toEqual([])
+      if (node.rawTransaction === undefined) throw new Error('the node recorded no raw transaction')
+      expect(parseTransaction(node.rawTransaction).gas).toBe(307_053n)
     } finally {
-      server.stop(true)
+      node.stop()
+    }
+  })
+
+  test('retries preparation through transient estimate failures', async () => {
+    const node = startFakeNode(2)
+    try {
+      const signer = localMnemonicSigner(mnemonic, node.url, { prepareAttempts: 3, prepareBaseDelayMs: 1 })
+      await signer.send({ from: signer.address, to: target, data: '0x', value: 0n }, 8453)
+      expect(node.estimateCalls).toBe(3)
+      if (node.rawTransaction === undefined) throw new Error('the node recorded no raw transaction')
+      expect(parseTransaction(node.rawTransaction).gas).toBe(307_053n)
+    } finally {
+      node.stop()
+    }
+  })
+
+  test('gives up after the preparation attempts and never broadcasts', async () => {
+    const node = startFakeNode(3)
+    try {
+      const signer = localMnemonicSigner(mnemonic, node.url, { prepareAttempts: 3, prepareBaseDelayMs: 1 })
+      const failure: unknown = await signer.send({ from: signer.address, to: target, data: '0x', value: 0n }, 8453).catch((cause: unknown) => cause)
+      expect(failure).toBeInstanceOf(TransactionNotSubmittedError)
+      const message = failure instanceof Error ? failure.message : String(failure)
+      expect(message).toContain('after 3 attempts')
+      expect(message).toContain('execution reverted')
+      expect(node.estimateCalls).toBe(3)
+      expect(node.sendRawCalls).toBe(0)
+    } finally {
+      node.stop()
     }
   })
 })
