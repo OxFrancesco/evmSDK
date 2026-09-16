@@ -43,12 +43,67 @@ const hydratePositions = Effect.fn('Sugar.Positions.hydratePositions')(function*
   return raw.map((position) => positionFromTuple(position, poolMap, ctx.settings)).filter((position): position is Position => position !== undefined)
 })
 
+/** Sugar's enumeration window (MAX_POSITIONS) for unstaked CL positions. */
+const UNSTAKED_CL_PAGE = 200n
+
+/**
+ * Sugar's `positions` lists basic LP and staked CL positions only; unstaked
+ * CL NFTs come from `positionsUnstakedConcentrated`, paginated over the
+ * account's tokens on the pools' NFPM contracts. The balance check keeps the
+ * scan from running at all for accounts with no CL NFTs.
+ */
+const unstakedConcentrated = Effect.fn('Sugar.Positions.unstakedConcentrated')(function* (
+  ctx: SugarContext,
+  owner: Address,
+  nfpms: Address[],
+) {
+  const balances = yield* Effect.all(
+    nfpms.map((nfpm) => ctx.read<bigint>(nfpm, abis.nfpm, 'balanceOf', [owner])),
+    { concurrency: 'unbounded' },
+  )
+  const count = balances.reduce((sum, balance) => sum + balance, 0n)
+  const unstaked: unknown[] = []
+  if (count === 0n) return unstaked
+  for (let offset = 0n; offset < count; offset += UNSTAKED_CL_PAGE) {
+    unstaked.push(...yield* ctx.read<unknown[]>(
+      ctx.settings.sugarContractAddress,
+      abis.sugar,
+      'positionsUnstakedConcentrated',
+      [UNSTAKED_CL_PAGE, offset, owner],
+    ))
+  }
+  return unstaked
+})
+
+/** The distinct NFPM contracts behind the CL pools in a raw pool catalog. */
+function clNfpms(rawPools: unknown[]): Address[] {
+  const nfpms = new Map<string, Address>()
+  for (const pool of rawPools) {
+    const nfpm = normalizeAddress(String(tupleValues(pool)[29]))
+    if (nfpm !== ADDRESS_ZERO) nfpms.set(addressKey(nfpm), nfpm)
+  }
+  return [...nfpms.values()]
+}
+
+/** Dedupe raw position tuples by `${lp}-${id}` (tuple indexes 1 and 0). */
+function dedupePositions(raw: unknown[]): unknown[] {
+  const seen = new Set<string>()
+  return raw.filter((position) => {
+    const values = tupleValues(position)
+    const key = `${addressKey(String(values[1]))}-${String(values[0])}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 export const getPositions = Effect.fn('Sugar.Positions.getPositions')(function* (
   ctx: SugarContext,
   owner?: Address,
 ) {
   if (!owner) throw new Error('Owner address is required to list positions')
-  const [raw, rawPools] = yield* Effect.all([
+  const rawPools = yield* clientCall(() => ctx.client.getRawPools(false))
+  const [raw, unstaked] = yield* Effect.all([
     // `positions` scans pool offsets and returns only matches for the owner,
     // so an empty/short response cannot safely terminate pagination: a later
     // pool may still contain a position. Use the configured maximum scan
@@ -65,9 +120,9 @@ export const getPositions = Effect.fn('Sugar.Positions.getPositions')(function* 
       ctx.rpc.deadline('positions'),
       ctx.settings.poolPaginationMaxSize,
     ),
-    clientCall(() => ctx.client.getRawPools(false)),
+    unstakedConcentrated(ctx, owner, clNfpms(rawPools)),
   ], { concurrency: 'unbounded' })
-  return yield* hydratePositions(ctx, raw, rawPools)
+  return yield* hydratePositions(ctx, dedupePositions([...raw, ...unstaked]), rawPools)
 })
 
 export const getPositionsByPool = Effect.fn('Sugar.Positions.getPositionsByPool')(function* (
@@ -88,7 +143,13 @@ export const getPositionsByPool = Effect.fn('Sugar.Positions.getPositionsByPool'
     'positions',
     [1, resolved.offset, owner],
   )
-  const matches = raw.filter((position) =>
+  // That read covers staked CL entries only; an unstaked CL NFT in this pool
+  // still needs the NFPM scan (pool tuple index 4 is the type, 29 the NFPM).
+  const poolValues = tupleValues(resolved.rawPool)
+  const unstaked = Number(poolValues[4]) > 0
+    ? yield* unstakedConcentrated(ctx, owner, [normalizeAddress(String(poolValues[29]))])
+    : []
+  const matches = dedupePositions([...raw, ...unstaked]).filter((position) =>
     addressKey(String(tupleValues(position)[1])) === addressKey(normalizedPool),
   )
   if (matches.length === 0) return []

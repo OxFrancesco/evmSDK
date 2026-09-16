@@ -103,6 +103,8 @@ const unsignedTransactions = quote
 - pool voting-reward discovery and incentive funding;
 - bridge fees, ICA reads, bridge transaction builders, and allowances.
 
+Unstaked concentrated positions are read through Sugar's `positionsUnstakedConcentrated`, so a freshly minted CL NFT shows up in `getPositions` before it is staked.
+
 Every transaction result is `{ from, to, data, value }`. `value` and other
 on-chain integers are `bigint` in the SDK and decimal strings after JSON
 serialization.
