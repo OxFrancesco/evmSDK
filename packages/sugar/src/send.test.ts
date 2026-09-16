@@ -1,7 +1,8 @@
 import { TransactionNotSubmittedError } from './submission-error'
 import { describe, expect, test } from 'bun:test'
 import type { Address, Hex } from 'viem'
-import { createExecutionPlan, renderPlanSummary, sendPlan, type ExecutionJournal, type PlanJournalStore, type SendPlanOptions } from './send'
+import { isHex, parseTransaction } from 'viem'
+import { createExecutionPlan, localMnemonicSigner, renderPlanSummary, sendPlan, withGasMargin, type ExecutionJournal, type PlanJournalStore, type SendPlanOptions } from './send'
 
 const owner: Address = '0x1111111111111111111111111111111111111111'
 const target: Address = '0x2222222222222222222222222222222222222222'
@@ -116,4 +117,79 @@ test('definite wallet rejection leaves a persisted retryable step without resend
   expect(store.load(execution.id)?.steps).toEqual([{ kind: 'confirmed', hash }, { kind: 'ready' }])
   await expect(sendPlan(options)).resolves.toEqual([hash, hash])
   expect(calls).toBe(3)
+})
+
+describe('local signer gas margin', () => {
+  test('adds 25% over the estimate and keeps zero at zero', () => {
+    expect(withGasMargin(245_643n)).toBe(307_053n)
+    expect(withGasMargin(0n)).toBe(0n)
+    expect(withGasMargin(100n, 0n)).toBe(100n)
+  })
+
+  test('signs the estimate plus margin against a fake node', async () => {
+    type RpcCall = { id?: number | string | null; method?: string; params?: unknown }
+    type FakeBlock = {
+      number: string; hash: string; parentHash: string; nonce: string; sha3Uncles: string
+      logsBloom: string; transactionsRoot: string; stateRoot: string; receiptsRoot: string
+      miner: string; difficulty: string; totalDifficulty: string; extraData: string; size: string
+      gasLimit: string; gasUsed: string; timestamp: string; baseFeePerGas: string
+      mixHash: string; transactions: string[]; uncles: string[]
+    }
+    type FeeHistory = { oldestBlock: string; baseFeePerGas: string[]; gasUsedRatio: number[]; reward: string[][] }
+    type FakeNodeReply = string | FakeBlock | FeeHistory
+    let rawTransaction: Hex | undefined
+    const missed: string[] = []
+    const resultFor = (call: RpcCall): FakeNodeReply | undefined => {
+      switch (call.method) {
+        case 'eth_chainId': return '0x2105'
+        case 'eth_getTransactionCount': return '0x0'
+        // 245,643: the exact estimate the reverted swap signed without margin.
+        case 'eth_estimateGas': return '0x3bf8b'
+        case 'eth_maxPriorityFeePerGas': return '0x3b9aca00'
+        case 'eth_gasPrice': return '0x77359400'
+        case 'eth_getBlockByNumber': return {
+          number: '0x1', hash: `0x${'a'.repeat(64)}`, parentHash: `0x${'0'.repeat(64)}`,
+          nonce: '0x0000000000000000', sha3Uncles: `0x${'0'.repeat(64)}`, logsBloom: `0x${'0'.repeat(512)}`,
+          transactionsRoot: `0x${'0'.repeat(64)}`, stateRoot: `0x${'0'.repeat(64)}`, receiptsRoot: `0x${'0'.repeat(64)}`,
+          miner: owner, difficulty: '0x0', totalDifficulty: '0x0', extraData: '0x', size: '0x100',
+          gasLimit: '0x1c9c380', gasUsed: '0x0', timestamp: '0x65f1a000', baseFeePerGas: '0x3b9aca00',
+          mixHash: `0x${'0'.repeat(64)}`, transactions: [], uncles: [],
+        }
+        case 'eth_feeHistory': return { oldestBlock: '0x1', baseFeePerGas: ['0x3b9aca00', '0x3b9aca00'], gasUsedRatio: [0.5], reward: [['0x3b9aca00']] }
+        case 'eth_sendRawTransaction': {
+          const params = Array.isArray(call.params) ? call.params : []
+          rawTransaction = isHex(params[0]) ? params[0] : undefined
+          return `0x${'3'.repeat(64)}`
+        }
+        default: {
+          missed.push(String(call.method))
+          return undefined
+        }
+      }
+    }
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (request) => {
+        // SAFETY: JSON-RPC bodies are an object or an array of objects; fields are read defensively.
+        const body = await request.json() as RpcCall | RpcCall[]
+        const calls = Array.isArray(body) ? body : [body]
+        const replies = calls.map((call) => {
+          const result = resultFor(call)
+          return result === undefined
+            ? { jsonrpc: '2.0', id: call.id ?? null, error: { code: -32601, message: `unstubbed method ${String(call.method)}` } }
+            : { jsonrpc: '2.0', id: call.id ?? null, result }
+        })
+        return Response.json(Array.isArray(body) ? replies : replies[0])
+      },
+    })
+    try {
+      const signer = localMnemonicSigner('test test test test test test test test test test test junk', `http://127.0.0.1:${String(server.port)}`)
+      await signer.send({ from: signer.address, to: target, data: '0x', value: 0n }, 8453)
+      expect(missed).toEqual([])
+      if (rawTransaction === undefined) throw new Error('the node recorded no raw transaction')
+      expect(parseTransaction(rawTransaction).gas).toBe(307_053n)
+    } finally {
+      server.stop(true)
+    }
+  })
 })

@@ -257,7 +257,8 @@ actions (`swap`, `deposit`, `withdraw`, `stake`, `unstake`, `claim-emissions`,
 human summary, and ask for confirmation before broadcasting each step
 (approvals first, receipts awaited). `--yes` skips the prompt; `--dry-run`
 always prints the unsigned plan. Without a wallet the CLI prints unsigned
-JSON.
+JSON. Local signing adds a 25% margin over the node's gas estimate, because
+swap gas moves with pool state between the estimate and inclusion.
 
 For Rabby, open `aero tui`, choose **Wallet → Connect browser wallet**, then
 select **Connect Rabby Wallet** on the page Aero opens. Approve the connection

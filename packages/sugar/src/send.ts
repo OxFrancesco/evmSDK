@@ -149,6 +149,13 @@ export function chainForSettings(chainId: number, rpcUrl?: string) {
   })
 }
 
+export const GAS_MARGIN_BPS = 2500n
+
+/** Swap gas moves with pool state between eth_estimateGas and inclusion, so the raw estimate needs headroom. */
+export function withGasMargin(gas: bigint, marginBps = GAS_MARGIN_BPS): bigint {
+  return gas + (gas * marginBps) / 10_000n
+}
+
 export function localMnemonicSigner(mnemonic: string, rpcUrl?: string): PlanSigner {
   const account = mnemonicToAccount(parseMnemonic(mnemonic))
   return {
@@ -161,7 +168,7 @@ export function localMnemonicSigner(mnemonic: string, rpcUrl?: string): PlanSign
         const chain = chainForSettings(chainId, rpcUrl)
         client = createWalletClient({ account, chain, transport: http() })
         const request = await client.prepareTransactionRequest({ account, chain, to: transaction.to, data: transaction.data, value: transaction.value })
-        signed = await client.signTransaction({ ...request, account })
+        signed = await client.signTransaction({ ...request, gas: request.gas === undefined ? undefined : withGasMargin(request.gas), account })
       } catch (cause) {
         throw new TransactionNotSubmittedError('Local transaction preparation failed before broadcast', { cause })
       }
