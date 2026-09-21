@@ -11,7 +11,8 @@
     ".": "./src/index.ts",
     "./crossmint": "./src/crossmint.ts",
     "./model": "./src/model.ts",
-    "./safe": "./src/safe.ts"
+    "./safe": "./src/safe.ts",
+    "./safe/passkey-browser": "./src/safe/passkey-browser.ts"
   },
   "scripts": {
     "cli": "bun src/cli.ts",
@@ -20,16 +21,21 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --config .oxlintrc.json --tsconfig tsconfig.json src scripts",
     "build": "bun build src/cli.ts src/index.ts --target=bun --packages=external --outdir=dist",
+    "test:safe:sponsored": "bun scripts/safe-sponsored-live.ts",
     "test:aero": "bun run --cwd packages/sugar test"
   },
   "dependencies": {
     "@beegreat/sugar": "workspace:*",
     "@crossmint/wallets-sdk": "1.14.0",
+    "@gnosis-guild/zodiac": "5.0.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@opentui/core": "0.5.1",
     "@opentui/react": "0.5.1",
+    "@safe-global/protocol-kit": "8.0.7",
+    "@safe-global/relay-kit": "6.1.1",
     "@safe-global/safe-contracts": "1.4.1-2",
     "@safe-global/safe-deployments": "1.37.63",
+    "@safe-global/safe-modules-deployments": "3.0.10",
     "@walletconnect/sign-client": "^2.24.0",
     "abitype": "1.0.8",
     "effect": "4.0.0-rc.115",

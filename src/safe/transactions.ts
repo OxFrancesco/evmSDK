@@ -6,6 +6,7 @@ import { Network, rpc } from '../network'
 import { decodeSafe, safeAbi, safeError, sentinel, validateOwners } from './contracts'
 import { SafeApprovalInput, SafeOwnerChangeInput, SafeProposalInput, SafeTarget, SafeTransaction, SafeTransactionInput } from './model'
 import { safeInfo } from './wallet'
+import { validateSafeCall } from './batch'
 
 const safeTypes = { SafeTx: [
   { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'data', type: 'bytes' },
@@ -14,11 +15,12 @@ const safeTypes = { SafeTx: [
 ] }
 export const safeTransactionHash = (transaction: Omit<SafeTransaction, 'hash'>) => hashTypedData({
   domain: { chainId: transaction.chainId, verifyingContract: transaction.safe }, types: safeTypes, primaryType: 'SafeTx',
-  message: { to: transaction.to, value: BigInt(transaction.value), data: transaction.data, operation: 0, safeTxGas: 0n, baseGas: 0n, gasPrice: 0n, gasToken: zeroAddress, refundReceiver: zeroAddress, nonce: BigInt(transaction.nonce) },
+  message: { to: transaction.to, value: BigInt(transaction.value), data: transaction.data, operation: transaction.operation ?? 0, safeTxGas: 0n, baseGas: 0n, gasPrice: 0n, gasToken: zeroAddress, refundReceiver: zeroAddress, nonce: BigInt(transaction.nonce) },
 })
 
 export const safePropose = Effect.fn('Safe.propose')(function* (raw: typeof SafeProposalInput.Type) {
   const input = yield* decodeSafe(SafeProposalInput, raw)
+  yield* validateSafeCall(input)
   if (input.to === zeroAddress) return yield* safeError('Safe transaction destination cannot be zero.')
   const info = yield* safeInfo({ chainId: input.chainId, safe: input.safe })
   const transaction = { ...input, nonce: info.nonce }
@@ -29,11 +31,12 @@ export const safeApprovals = Effect.fn('Safe.approvals')(function* (raw: typeof 
   const input = yield* decodeSafe(SafeTransactionInput, raw)
   const tx = input.transaction
   if (input.chainId !== tx.chainId || safeTransactionHash(tx).toLowerCase() !== tx.hash.toLowerCase()) return yield* safeError('Safe transaction chain or hash does not match its contents.')
+  yield* validateSafeCall(tx)
   const info = yield* safeInfo({ chainId: input.chainId, safe: tx.safe })
   if (info.nonce !== tx.nonce) return yield* safeError('Safe nonce changed. This transaction is stale; inspect the chain before proposing another.')
   const connection = yield* (yield* Network).client(input.chainId)
   const blockNumber = BigInt(info.block)
-  const onChainHash = yield* rpc(() => connection.readContract({ address: tx.safe, abi: safeAbi, functionName: 'getTransactionHash', args: [tx.to, BigInt(tx.value), tx.data, 0, 0n, 0n, 0n, zeroAddress, zeroAddress, BigInt(tx.nonce)], blockNumber }))
+  const onChainHash = yield* rpc(() => connection.readContract({ address: tx.safe, abi: safeAbi, functionName: 'getTransactionHash', args: [tx.to, BigInt(tx.value), tx.data, tx.operation ?? 0, 0n, 0n, 0n, zeroAddress, zeroAddress, BigInt(tx.nonce)], blockNumber }))
   if (onChainHash.toLowerCase() !== tx.hash.toLowerCase()) return yield* safeError('Safe contract returned a different transaction hash.')
   const approvals = yield* Effect.forEach(info.owners, owner => rpc(() => connection.readContract({ address: tx.safe, abi: safeAbi, functionName: 'approvedHashes', args: [owner, tx.hash], blockNumber })), { concurrency: 4 })
   const approved = info.owners.filter((_, i) => approvals[i] !== undefined && approvals[i] !== 0n).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
@@ -54,7 +57,7 @@ export const safeExecute = Effect.fn('Safe.execute')(function* (raw: typeof Safe
   if (!status.ready) return yield* safeError(`Safe requires ${status.threshold} on-chain approvals; found ${status.approved.length}.`)
   const signatures = concatHex(status.approved.slice(0, status.threshold).map(owner => concatHex([padHex(owner, { size: 32 }), padHex('0x', { size: 32 }), '0x01'])))
   const tx = input.transaction
-  const data = encodeFunctionData({ abi: safeAbi, functionName: 'execTransaction', args: [tx.to, BigInt(tx.value), tx.data, 0, 0n, 0n, 0n, zeroAddress, zeroAddress, signatures] })
+  const data = encodeFunctionData({ abi: safeAbi, functionName: 'execTransaction', args: [tx.to, BigInt(tx.value), tx.data, tx.operation ?? 0, 0n, 0n, 0n, zeroAddress, zeroAddress, signatures] })
   return publicOperation(yield* prepare({ chainId: input.chainId, account: input.account, to: tx.safe, value: '0', data, key: input.key }))
 })
 
@@ -80,6 +83,15 @@ export const safeChangeOwner = Effect.fn('Safe.changeOwner')(function* (raw: typ
       const previous = index === 0 ? sentinel : info.owners[index - 1]
       if (!previous) return yield* safeError('Safe owner ordering changed.')
       data = encodeFunctionData({ abi: safeAbi, functionName: 'removeOwner', args: [previous, change.owner, BigInt(change.threshold)] })
+      break
+    }
+    case 'replace': {
+      const index = info.owners.findIndex(owner => owner.toLowerCase() === change.owner.toLowerCase())
+      if (index < 0) return yield* safeError('The address to replace is not a Safe owner.')
+      yield* validateOwners(info.owners.map((owner, i) => i === index ? change.replacement : owner), info.threshold, input.safe)
+      const previous = index === 0 ? sentinel : info.owners[index - 1]
+      if (!previous) return yield* safeError('Safe owner ordering changed.')
+      data = encodeFunctionData({ abi: safeAbi, functionName: 'swapOwner', args: [previous, change.owner, change.replacement] })
       break
     }
     case 'threshold':

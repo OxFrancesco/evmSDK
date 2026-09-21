@@ -1,3 +1,4 @@
+import { verifyModule } from './module-contracts'
 import { getProxyFactoryDeployment, getSafeL2SingletonDeployment, getSafeSingletonDeployment } from '@safe-global/safe-deployments'
 import proxy from '@safe-global/safe-contracts/build/artifacts/contracts/proxies/SafeProxy.sol/SafeProxy.json'
 import { Effect, Schema } from 'effect'
@@ -19,6 +20,11 @@ export const safeAbi = parseAbi([
   'function execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures) payable returns (bool success)',
   'function addOwnerWithThreshold(address owner,uint256 threshold)',
   'function removeOwner(address previousOwner,address owner,uint256 threshold)',
+  'function swapOwner(address previousOwner,address oldOwner,address newOwner)',
+  'function enableModule(address module)',
+  'function disableModule(address previousModule,address module)',
+  'function isModuleEnabled(address module) view returns (bool)',
+  'function setFallbackHandler(address handler)',
   'function changeThreshold(uint256 threshold)',
 ])
 export const factoryAbi = parseAbi(['function createProxyWithNonce(address singleton,bytes initializer,uint256 saltNonce) returns (address proxy)'])
@@ -52,8 +58,10 @@ export const verifySafe = Effect.fn('Safe.verify')(function* (chainId: number, s
   const expected = [registry.singleton, registry.l2].find(item => item.address.toLowerCase() === singleton.toLowerCase())
   if (!expected) return yield* safeError('Only official Safe 1.4.1 singletons are supported.')
   yield* verifyCode(chainId, singleton, expected.codeHash, block)
-  const [modules] = yield* rpc(() => connection.readContract({ address: safe, abi: safeAbi, functionName: 'getModulesPaginated', args: [sentinel, 1n], blockNumber: block }))
-  if (modules.length) return yield* safeError('This Safe has enabled modules that can bypass owner approvals. Only module-free Safes are supported.')
+  const [modules, next] = yield* rpc(() => connection.readContract({ address: safe, abi: safeAbi, functionName: 'getModulesPaginated', args: [sentinel, 32n], blockNumber: block }))
+  if (next !== sentinel) return yield* safeError('Safe has too many enabled modules to review.')
+  for (const module of modules) yield* verifyModule(chainId, safe, module, block)
+  return modules
 })
 
 export const validateOwners = Effect.fn('Safe.validateOwners')(function* (owners: ReadonlyArray<`0x${string}`>, threshold: number, safe?: string) {

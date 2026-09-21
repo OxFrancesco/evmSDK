@@ -141,7 +141,9 @@ The generic and Effect anti-slop rules run as errors. Effect is pinned to v4 rc.
 
 Create single-owner and threshold wallets with `safe-predict` and `safe-deploy`. The shared catalog also includes `safe-info`, `safe-propose`, `safe-approvals`, `safe-approve`, `safe-execute`, `safe-cancel-propose` and `safe-owner-propose`. Creation, approval and execution return unsigned plans for the normal approval and journal workflow. Import the Effect workflows from `@beegreat/evm/safe`.
 
-Supports official, module-free Safe 1.4.1 deployments. Approvals are on-chain and permanent for their hash; cancellation and owner changes require the current threshold. A shared backend controlling all owners does not provide independent custody. See [Safe organization wallets](./docs/39-safe-organization-wallets.md) for the full flow, recovery rules and verification limits. Local contract test evidence is saved in ignored `artifacts/safe-e2e.json`; live Crossmint relay execution is a separate check.
+Supports verified Safe 1.4.1 wallets, atomic CALL batches, token budgets, scoped Zodiac Roles permissions, passkey contract owners, surviving-quorum signer replacement and sponsored ERC-4337 execution. Modules are checked against pinned deployments. Owners approve enabling or revoking module authority. A secondary Safe can hold a restricted role without lowering the treasury threshold.
+
+See [Safe organization wallets](./docs/39-safe-organization-wallets.md) for configuration, commands, permission limits and recovery rules. The isolated suite tests actual contracts, including P-256 signatures. An explicit Base Sepolia test verifies sponsored 2-of-3 execution with ephemeral owners. Physical-authenticator acceptance and live Pecu/Crossmint relay remain separate checks.
 
 Safe deployment metadata is MIT licensed. The pinned Safe contract artifact dependency retains its LGPL-3.0 license. This project is independent of Safe and Crossmint.
 

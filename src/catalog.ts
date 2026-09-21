@@ -1,3 +1,4 @@
+import * as SafeExtensions from './safe'
 import { SafeTarget, SafeCreateInput, SafeDeployInput, SafeInfo, SafeProposalInput, SafeTransaction, SafeTransactionInput, SafeApprovalInput, SafeApprovals, SafeDeployment, SafeOwnerChangeInput, safeInfo, safePredict, safeDeploy, safePropose, safeApprovals, safeApprove, safeExecute, safeCancelProposal, safeChangeOwner } from './safe'
 import { Effect, Schema, Stream } from 'effect'
 import { erc20Abi, stringify } from 'viem'
@@ -20,7 +21,7 @@ import { Batch, BatchInput, prepareBatch, runBatch, batchStatus } from './batche
 import { readWatchInput, readWatchSample, readWatch, MonitorInput, Monitor, createMonitor, pollMonitor, acknowledgeMonitor, pauseMonitor } from './monitor'
 import { BlockSample, WatchInput, watchBlocks } from './watch'
 
-export type Services = Network | Store | Signer | Wallets | Socket
+export type Services = Network | Store | Signer | Wallets | Socket | SafeExtensions.SafeRelay
 export interface Command {
   readonly name: string
   readonly description: string
@@ -50,10 +51,33 @@ const operationId = Schema.Struct({ id: Id })
 const accountInput = Schema.Struct({ chainId: ChainId, address: Address })
 
 export const commands: ReadonlyArray<Command> = [
-  command('safe-info', 'Read owners, threshold and nonce of an official module-free Safe 1.4.1.', SafeTarget, safeInfo, SafeInfo),
+  command('safe-sponsored-enable-propose', 'Propose enabling the verified ERC-4337 module and fallback handler.', SafeTarget, SafeExtensions.safeSponsoredEnable, SafeTransaction),
+  command('safe-sponsored-propose', 'Prepare and persist a paymaster-sponsored Safe UserOperation. No signature or broadcast. Requires exact-chain relay configuration.', SafeExtensions.SafeSponsoredInput, SafeExtensions.safeSponsoredPropose, SafeExtensions.SafeSponsoredRecord),
+  command('safe-sponsored-sign', 'Sign the exact fingerprint with the connected EOA owner. Does not broadcast.', SafeExtensions.SafeSponsoredSignInput, SafeExtensions.safeSponsoredSign, SafeExtensions.SafeSponsoredRecord),
+  command('safe-sponsored-signature', 'Attach an external EOA or passkey owner signature to the exact fingerprint.', SafeExtensions.SafeSponsoredSignatureInput, SafeExtensions.safeSponsoredSignature, SafeExtensions.SafeSponsoredRecord),
+  command('safe-sponsored-submit', 'Submit the approved, signed UserOperation. Persists its hash before sending; retries use the same bytes.', SafeExtensions.SafeSponsoredSubmitInput, SafeExtensions.safeSponsoredSubmit, SafeExtensions.SafeSponsoredRecord),
+  command('safe-sponsored-status', 'Read sponsored-operation status and independently verify its on-chain event. Never signs or sends.', SafeExtensions.SafeSponsoredId, SafeExtensions.safeSponsoredStatus, SafeExtensions.SafeSponsoredRecord),
+  command('safe-sponsored-cancel', 'Cancel an unsubmitted local sponsored operation.', SafeExtensions.SafeSponsoredId, SafeExtensions.safeSponsoredCancel, SafeExtensions.SafeSponsoredRecord),
+  command('safe-passkey-address', 'Predict a signer from a P-256 passkey public key. Does not collect or store the private key.', SafeExtensions.SafePasskeyInput, SafeExtensions.safePasskeyAddress, Schema.Struct({ owner: Address, factory: Address, verifier: Address, deployed: Schema.Boolean })),
+  command('safe-passkey-deploy', 'Prepare deployment of a passkey signer. Does not add it to the Safe.', SafeExtensions.SafePasskeyDeployInput, SafeExtensions.safePasskeyDeploy, Schema.Struct({ ...OperationView.fields, owner: Address })),
+  command('safe-passkey-owner-propose', 'Propose adding a deployed passkey signer. Current owners must approve.', SafeExtensions.SafePasskeyOwnerInput, SafeExtensions.safePasskeyOwner, SafeTransaction),
+  command('safe-execute-signatures', 'Prepare execution with collected EOA or contract/passkey signatures. Validates the complete proposal and simulates contract signature verification.', SafeExtensions.SafeSignaturesInput, SafeExtensions.safeExecuteSignatures, OperationView),
+  command('safe-batch-propose', 'Propose an atomic CALL-only batch. Owners approve the complete batch.', SafeExtensions.SafeBatchInput, SafeExtensions.safeBatchPropose, SafeTransaction),
+  command('safe-module-info', 'Verify module bytecode and ownership, and read its enabled state.', SafeExtensions.SafeModuleTarget, SafeExtensions.safeModuleInfo, Schema.Struct({ ...SafeExtensions.SafeModuleTarget.fields, enabled: Schema.Boolean })),
+  command('safe-module-propose', 'Propose enabling or disabling a verified module. Enabled modules authorize actions under their own rules.', SafeExtensions.SafeModuleInput, SafeExtensions.safeModulePropose, SafeTransaction),
+  command('safe-budget', 'Read the current token budget, remaining amount, reset period and module state.', SafeExtensions.SafeBudgetTarget, SafeExtensions.safeBudget, SafeExtensions.SafeBudget),
+  command('safe-budget-propose', 'Propose an agent token budget. Amount is token base units, zero resetMinutes means one-time. Owners must approve and execute.', SafeExtensions.SafeBudgetInput, SafeExtensions.safeBudgetPropose, SafeTransaction),
+  command('safe-budget-revoke-propose', 'Propose deleting a delegate token budget. Owners must approve and execute.', SafeExtensions.SafeBudgetTarget, SafeExtensions.safeBudgetRevoke, SafeTransaction),
+  command('safe-budget-spend', 'Prepare a transfer from the Safe using the caller budget. No additional owner quorum; ordinary execute approval remains required.', SafeExtensions.SafeBudgetSpendInput, SafeExtensions.safeBudgetSpend, OperationView),
+  command('safe-roles-deploy', 'Prepare a Zodiac Roles proxy owned by the Safe. Does not enable the module.', SafeExtensions.SafeRolesDeployInput, SafeExtensions.safeRolesDeploy, Schema.Struct({ ...OperationView.fields, module: Address })),
+  command('safe-role-grant-propose', 'Propose static-argument function permissions and a member. A member can be a lower-threshold Safe. Grants update listed functions; use a fresh role to isolate a policy.', SafeExtensions.SafeRoleGrantInput, SafeExtensions.safeRoleGrant, SafeTransaction),
+  command('safe-role-revoke-propose', 'Propose revoking a member from a role.', SafeExtensions.SafeRoleTarget, SafeExtensions.safeRoleRevoke, SafeTransaction),
+  command('safe-role-check', 'Simulate an exact role call to check current permission and execution. Does not send.', SafeExtensions.SafeRoleCallInput, SafeExtensions.safeRoleCheck, Schema.Struct({ allowed: Schema.Boolean, safe: Address, module: Address, role: Hash })),
+  command('safe-role-execute', 'Prepare a CALL with role permissions. Reverts on permission denial or failed inner execution.', SafeExtensions.SafeRoleExecuteInput, SafeExtensions.safeRoleExecute, OperationView),
+  command('safe-info', 'Read owners, threshold and nonce of an official Safe 1.4.1, including verified enabled modules.', SafeTarget, safeInfo, SafeInfo),
   command('safe-predict', 'Predict a deterministic Safe address. No deployment or signature.', SafeCreateInput, safePredict, SafeDeployment),
   command('safe-deploy', 'Prepare deployment of a Safe with explicit owners and threshold. Execute the returned plan separately.', SafeDeployInput, safeDeploy, Schema.Struct({ ...OperationView.fields, deployment: SafeDeployment })),
-  command('safe-propose', 'Build a portable Safe CALL proposal at its current nonce. Does not approve or execute; values are wei. Refunds and delegatecall are disabled.', SafeProposalInput, safePropose, SafeTransaction),
+  command('safe-propose', 'Build a portable Safe CALL proposal at its current nonce. Does not approve or execute; values are wei. Refunds are disabled. Delegatecall is limited to validated MultiSendCallOnly batches.', SafeProposalInput, safePropose, SafeTransaction),
   command('safe-approvals', 'Verify the full proposal and read on-chain owner approvals. Rejects changed payloads and stale nonces.', SafeTransactionInput, safeApprovals, SafeApprovals),
   command('safe-approve', 'Prepare an owner approveHash transaction for a full reviewed proposal. Approval is permanent for this hash. Execute the returned plan separately.', SafeApprovalInput, safeApprove, OperationView),
   command('safe-execute', 'Prepare Safe execution only after the threshold of on-chain approvals. Execute the returned outer plan separately.', SafeApprovalInput, safeExecute, OperationView),

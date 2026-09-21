@@ -1,71 +1,112 @@
 # Safe organization wallets
 
-Safe provides threshold authorization independently of Crossmint. A wallet can have one owner or require, for example, two of three owners. Pecu's personal Crossmint wallet remains unchanged.
+Safe supplies threshold authorization independently of Crossmint. A wallet can have one owner or require two of three owners. Pecu's personal Crossmint wallet remains unchanged. Multiple owners controlled by one backend secret do not provide independent custody.
 
-The first implementation supports official Safe 1.4.1 proxies with no enabled modules. Creation uses the official deployment registry and verifies factory and singleton bytecode against its hashes. Existing wallets must have the expected proxy bytecode and singleton. Modules are rejected because they can execute without the normal owner threshold.
+The SDK verifies official Safe 1.4.1 proxy and singleton code. It accepts only verified Allowance 0.1.1, Safe 4337 0.3.0 and Zodiac Roles 2.1.1 modules. A Roles proxy must be owned by, and target, the selected Safe. Unknown modules are refused. Deployment addresses and runtime hashes are pinned in `src/safe/deployments.json`; a chain must have those exact deployments.
 
-## Commands
+## Owners and transactions
 
-All commands are available through the SDK, CLI, TUI and MCP catalog. Transaction amounts and nonces are decimal strings. Threshold is an integer owner count. None of these commands signs automatically.
+All commands share the SDK, CLI, TUI and MCP catalog. Run `evm discover` for input and output schemas. Native values are wei and token amounts are base units, represented as decimal strings. Thresholds are integer owner counts.
 
 | Command | Result |
 | --- | --- |
-| `safe-predict` | Deterministic address and deployment status for explicit owners, threshold and salt nonce |
-| `safe-deploy` | Simulated deployment plan and predicted address |
-| `safe-info` | On-chain owners, threshold, nonce and observation block |
-| `safe-propose` | Portable transaction containing chain, Safe, destination, value, calldata, nonce and EIP-712 hash |
-| `safe-approvals` | Current owners who approved that exact transaction on-chain |
-| `safe-approve` | Simulated `approveHash` plan for one owner |
-| `safe-execute` | Simulated execution plan once enough on-chain approvals exist |
-| `safe-cancel-propose` | A competing zero-value self-call at the current nonce |
-| `safe-owner-propose` | Proposal to add/remove an owner or change the threshold |
+| `safe-predict`, `safe-deploy` | Deterministic address and unsigned deployment plan |
+| `safe-info` | Owners, threshold, enabled modules, nonce and observation block |
+| `safe-propose`, `safe-batch-propose` | A portable, hash-bound proposal at the current Safe nonce |
+| `safe-approvals`, `safe-approve` | Inspect or prepare one owner's on-chain hash approval |
+| `safe-execute` | Unsigned execution plan after enough current owners approve |
+| `safe-execute-signatures` | Unsigned plan using collected EOA or contract-owner signatures |
+| `safe-cancel-propose` | Competing zero-value self-call at the current nonce |
+| `safe-owner-propose` | Add, remove or replace an owner, or change the threshold |
 
-Run `evm discover` for the complete input/output schemas. A typical sequence is:
+Deployment and execution commands return plans for the ordinary `execute` and `status` journal workflow. Review the exact fingerprint before execution. Each owner approves the full proposal independently. Keep operation IDs and idempotency keys after timeouts; do not create another action with a fresh key.
 
-1. Call `safe-predict` with `chainId`, `owners`, `threshold` and `saltNonce`. Preserve the salt when retrying creation.
-2. Call `safe-deploy` with those fields, the deployment payer's `account`, and an idempotency `key`.
-3. Review the returned plan. Call the ordinary `execute` command with its exact fingerprint and then `status` or `wait`.
-4. Build a `safe-propose` transaction. Share the entire returned transaction with the other owners, not just its hash.
-5. Each owner calls `safe-approve` with `chainId`, `transaction`, their own `account`, and their own `key`. Execute each returned outer plan separately.
-6. Once `safe-approvals` reports the threshold, call `safe-execute`. Review and execute that outer plan. The executor need not be an owner.
+Safe proposals bind the chain, wallet, destination, value, calldata, operation and nonce. Refund fields are zero. Ordinary calls use CALL. Batches allow up to 64 CALLs through the verified MultiSendCallOnly contract; arbitrary delegatecall and nested delegated calls are rejected. A failed batch item reverts every item.
 
-Keep the operation ID after preparing any transaction. Recover using `status` and `execute` on that ID. Do not create a new key after a timeout. Proposal commands reject stale Safe nonces, including after successful execution. The ordinary operation journal remains the recovery record.
+An `approveHash` approval is permanent for that exact hash. Local cancellation does not revoke it. Owners must approve and execute a competing cancellation at the same Safe nonce to invalidate other proposals. Cancellation can lose a race. Outer plan expiry does not expire an on-chain Safe approval.
 
-## Approval and cancellation semantics
+Signer replacement uses `change: { kind: "replace", owner, replacement }`. The surviving owners must still meet the current threshold. This is quorum-based recovery, not recovery after losing enough keys to fall below quorum. It keeps the Safe address, assets and threshold.
 
-`approveHash` records one owner's approval permanently for one exact hash. It costs gas. The implementation verifies the hash locally and against the Safe contract, and counts only approvals from current owners. Duplicate owners, altered payloads, wrong chains and stale nonces are rejected.
+## Agent spending budgets
 
-The Safe transaction uses CALL, zero Safe gas-refund fields and no delegatecall. This prevents a supplied proposal from silently changing refund or delegation authority. With both Safe transaction gas and gas price zero, an inner failure reverts the Safe execution instead of being reported as a successful outer transaction.
+`safe-budget-propose` builds one owner-approved batch to enable the Allowance module, register a delegate and set a token budget. Supply `safe`, `delegate`, `token`, `amount`, `resetMinutes` and `chainId`. Use the zero token address for ETH. A zero reset interval means a one-time budget; otherwise the contract replenishes it at the specified minute interval.
 
-Cancelling a local unsigned outer plan does not revoke an on-chain Safe approval. To invalidate competing proposals, owners must approve and execute the cancellation proposal first. Cancellation requires the existing threshold and can lose a race to another valid proposal. Owner and threshold changes also require the existing threshold.
+`safe-budget` reads the remaining allowance and whether the module is enabled. `safe-budget-spend` prepares a transfer for the delegate account, enforcing the amount, token and remaining budget on-chain. It uses no fee token or delegated signature. Owners revoke with `safe-budget-revoke-propose`, or disable the entire module with `safe-module-propose`.
 
-The toolkit's outer plan expiry is not an expiry on a Safe approval. Once recorded, an approval remains valid while the Safe nonce and owner configuration allow it.
+A budget limits quantity, not recipients. Use Roles when the recipient or contract action must also be restricted. Granting a budget authorizes future spending without a new owner quorum for each payment.
+
+## Restricted contract permissions
+
+1. Prepare and execute `safe-roles-deploy`. Its new module initially has no authority.
+2. Build `safe-role-grant-propose` with the module, a nonzero bytes32 role, member and permissions. Owners approve and execute the returned batch.
+3. Inspect the module with `safe-module-info`, and simulate an exact call with `safe-role-check`.
+4. Prepare `safe-role-execute` as the member account. Owners can revoke membership with `safe-role-revoke-propose` or disable the module.
+
+Each permission fixes a target and four-byte function selector. Each static ABI argument has either an exact 32-byte value or an inclusive unsigned maximum. For an ERC-20 transfer, fix argument one to the padded recipient address and cap argument two to the token amount. Aave supply can similarly fix the asset, beneficiary and referral code while capping the amount.
+
+This first permission builder supports static ABI arguments only. It excludes dynamic tuples, arrays and bytes, native ETH transfers and delegatecall. It rejects permissions targeting the treasury or its Roles module. Token approvals can grant downstream spenders authority; use a precise spender and amount.
+
+Updating a role changes only the listed functions. It does not erase previously granted functions or other memberships. Use a new role key when creating a separate policy. Revocation removes the specified member from that role.
+
+For routine operations with a lower threshold, create a separate Safe and make its address the role member. That Safe proposes a CALL to the Roles module's `execTransactionWithRole`. Its own threshold authorizes the call, and the treasury's role restrictions still apply. The treasury owner threshold does not change.
+
+## Passkeys
+
+Import `createSafePasskey` and `signSafeWithPasskey` from `@beegreat/evm/safe/passkey-browser` in a browser. Registration uses WebAuthn P-256 with required user verification. Persist the returned credential ID and public coordinates for that user and relying-party domain. The browser and authenticator retain the private key.
+
+Pass the public `x` and `y` coordinates to `safe-passkey-address`, then prepare and execute `safe-passkey-deploy`. The owner is a dedicated official WebAuthn signer contract. Add it through `safe-passkey-owner-propose`, approved by the existing quorum. Adding a passkey is separate from deploying its signer.
+
+`signSafeWithPasskey` verifies the chain and full transaction hash before requesting a WebAuthn assertion. It returns contract signatures for `safe-execute-signatures`. Replace or remove a lost passkey through the ordinary owner workflow while the surviving quorum is available. No guardian recovery module or product passkey screen is included.
+
+## Sponsored gas
+
+The evmSDK runtime accepts `safeRelay: { chainId, bundlerUrl, paymasterUrl, sponsorshipPolicyId? }`. Wrap endpoint URLs in Effect `Redacted`. CLI configuration uses:
+
+```dotenv
+EVM_SAFE_RELAY_CHAIN_ID=84532
+EVM_SAFE_BUNDLER_URL=https://your-provider/testnet-rpc
+EVM_SAFE_PAYMASTER_URL=https://your-provider/testnet-rpc
+# EVM_SAFE_SPONSORSHIP_POLICY_ID=your-policy-id
+```
+
+Configure the RPC for the same chain. Endpoint credentials stay out of returned errors and proposals. An existing Safe first needs the owner-approved `safe-sponsored-enable-propose`, which enables the verified module and fallback handler. A new Safe can be deployed in its first sponsored operation.
+
+Use `safe-sponsored-propose` with `chainId`, `wallet`, CALL-only `calls` and an idempotency `key`. `wallet` is either `{ safe }` or `{ owners, threshold, saltNonce }`. The response contains the exact sponsored operation, fingerprint and ten-minute validity window. Collect signatures through `safe-sponsored-sign` using a configured local EOA, or `safe-sponsored-signature` with an externally produced SafeOp signature. A normal SafeTx signature is not a SafeOp signature.
+
+`safe-sponsored-submit` requires the reviewed fingerprint and threshold signatures. It simulates signed EntryPoint execution before changing the operation to pending. Invalid signatures remain editable. It persists the user-operation hash before contacting the bundler, and retries reuse the same operation. After a timeout, inspect `safe-sponsored-status` first. Status verifies the on-chain EntryPoint event, sender, nonce, paymaster and canonical receipt block. Inclusion is not a finality guarantee.
+
+`safe-sponsored-cancel` only cancels a local, unsubmitted record. It cannot revoke copies of signatures held elsewhere; those remain usable until their validity window closes or their nonce is consumed. Paymaster funding and eligibility are provider policies, not guarantees from Safe.
+
+The dedicated personal Pimlico key is in the ignored, mode-0600 `.env.safe-testnet.json` at the source checkout root. It is not included in exports or deployments. Run the live test explicitly:
+
+```sh
+SAFE_TEST_CONFIG="$PWD/.env.safe-testnet.json" bun run test:safe:sponsored
+```
+
+The test accepts Base Sepolia only and generates ephemeral owners. Pimlico's default testnet sponsorship worked. No separate sponsorship policy was created because the dashboard required a mainnet whitelist selection even with testnets enabled. The key name alone does not enforce a testnet-only provider restriction. Mainnet sponsorship remains unconfigured.
 
 ## Pecu
 
-The shared tool set exposes `safe_create`, `safe_info`, `safe_propose`, `safe_approvals`, `safe_approve`, `safe_execute`, `safe_cancel_propose` and `safe_owner_propose`. Requests use Base mainnet. Creation asks for explicit owner addresses and threshold. The sender's existing wallet pays deployment/relay fees; it is not automatically added as an owner.
+Pecu exposes 25 Safe tools through the shared web/X Chat tool set, for both OpenRouter and ChatGPT inference paths. Safe configuration proposals, budgets, roles, passkey signer deployment, collected signatures and signer replacement use the same verified sender and persisted confirmation flow as existing transfers. Requests stay on Base mainnet.
 
-Pecu previews native and ERC-20 transfers, ERC-20 allowances, cancellation and owner changes in human-readable form. Other Safe CALL transactions are available through evmSDK. Safe approval and execution take the full proposal, and Pecu independently checks the outer calldata against it before persisting or signing. Opaque contract calls are refused in Pecu's confirmation flow.
+Pecu independently compares planned calldata to the reviewed request. It checks the sender, zero outer value, module destination, role, inner target, amount, signature bytes and deployment configuration. Budget and token previews use token decimals. Other role calls require a verified contract ABI and describe static arguments explicitly in contract base units. Opaque ordinary Safe contract calls remain SDK-only.
 
-The sandbox can read and prepare these actions. It cannot sign. The Durable Object keeps the verified sender identity, persisted preview, confirmation, execution lock and receipt checks. The same tools and capabilities run through both configured inference paths. ChatGPT's per-user inference bridge forwards Safe reads and proposals to the same authoritative service.
+The sandbox reads and prepares. It cannot sign or submit transactions. The Durable Object owns confirmation, execution locks and receipt checks. Pecu relays confirmed transactions through its existing Crossmint wallet path. Dedicated Pimlico ERC-4337 submission is available in evmSDK; its credentials and local journal are not exposed through Pecu's disposable sandbox. No production worker deployment or live Crossmint/Safe relay test is included in this release.
 
-A Pecu confirmation approves one owner's action. It does not count as the other owners' consent. Multiple wallets controlled by Pecu's one backend secret do not provide independent custody. Use separately controlled owner wallets and recovery credentials when that is required. This change does not migrate existing personal wallets or their recovery keys.
+BeeGreat mobile, Android, CLI, iMessage, voice and Hive do not call Pecu's wallet service. They gain no separate Safe UI. No Convex, Bee UI or client wire contracts changed.
 
-## Verification and release scope
+## Verification
 
-`bun run test:e2e` runs the existing transaction suite plus `scripts/safe-e2e.ts`. The Safe suite uses official contract artifacts on isolated Anvil and ephemeral keys. It verifies deterministic deployment, one-owner rejection by the actual contract, execution by two contract-wallet owners, payload/chain validation, replay rejection, cancellation, owner removal and the built CLI. No production funds or user keys are used.
+`bun run test:e2e` runs isolated Anvil contract tests with official artifacts and ephemeral keys. The Safe tests cover independent 2-of-3 approval, replay rejection, atomic batch rollback, budget enforcement/reset/revocation, role recipient/amount/membership restrictions, lower-threshold secondary Safes, owner replacement, module disabling and real P-256 WebAuthn signature verification. Browser helpers still need a physical authenticator acceptance test; the local contract test constructs a valid WebAuthn assertion using an ephemeral P-256 key.
 
-Pecu tests independently compare Safe calldata to the reviewed proposal and reject changed recipients, amounts, owners, thresholds, refunds, delegatecall and sender overrides.
+Pecu tests separately reject changed recipients, delegates, values, roles, call modes, signatures and owner settings. SDK type checks, lint, unit/TUI tests and builds run alongside Pecu regression tests and dry-run worker builds.
 
-This is local contract proof, not a live Crossmint bundler or production Pecu acceptance test. Crossmint wallets can participate by sending an ordinary `approveHash` call, but that live composition still needs funded relay verification.
+On 2026-09-21 a live Pimlico-sponsored 2-of-3 Safe deployment and zero-value call succeeded on Base Sepolia. The test rejected insufficient quorum, an invalid second signature and a changed fingerprint, then confirmed idempotent resubmission. No user funds moved.
 
-Client applicability: evmSDK's CLI, TUI and MCP share the catalog. Pecu web and X Chat share the agent confirmation flow and use plain-text previews. BeeGreat mobile, Android, CLI, iMessage, voice and Hive do not call Pecu's wallet service and gain no separate organization-wallet UI from this change. No Convex or Bee UI contract changes are required.
+- Safe: `0x67AC2236E0EeFDCc8d2e95f907c0e6B8787FE08a`
+- [Transaction receipt](https://sepolia.basescan.org/tx/0x475b2627f342d52a61110d936165f2bf9483cc3da25d311a4ab3340bc85e4a8c)
+- User operation: `0xc31b96c756f8ced53af822b667aff3f5ba4a56fc8a8f9b2fab220338faf9b2e3`
 
 ## Sources and licenses
 
-- [Safe approval format](https://docs.safe.global/advanced/smart-account-signatures)
-- [Safe approveHash semantics](https://docs.safe.global/reference-smart-account/signatures/approveHash)
-- [Official deployment registry](https://github.com/safe-global/safe-deployments)
-- [Safe 1.4.1 contracts](https://github.com/safe-global/safe-smart-account/tree/v1.4.1)
-
-The deployment registry is MIT licensed. The pinned `@safe-global/safe-contracts` package retains its LGPL-3.0 notices and contains the official artifacts used for verification. Contract sources are not copied into this repository. `OwnerWallet.sol` is an original local-test fixture. This integration is independent of Safe and Crossmint.
+See [Safe's spending-limit guide](https://docs.safe.global/home/ai-agent-quickstarts/agent-with-spending-limit), [Safe Relay Kit](https://docs.safe.global/sdk/relay-kit/reference/safe-4337-pack), [Zodiac Roles](https://docs.roles.gnosisguild.org/sdk/getting-started) and [Safe signature formats](https://docs.safe.global/advanced/smart-account-signatures). Runtime dependencies retain their licenses. The test fixtures retain LGPL-3.0, GPL-3.0 and P-256 MIT notices; see `fixtures/SAFE-LICENSES.md`. This integration is independent of Safe, Crossmint, Pimlico and Gnosis Guild.

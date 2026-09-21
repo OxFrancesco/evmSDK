@@ -1,3 +1,4 @@
+import { safeRelayLayer, type SafeRelayOptions } from './safe/relay'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { Config, Effect, Layer, Option, Redacted, Schema } from 'effect'
@@ -13,7 +14,7 @@ import { networkLayer } from './network'
 import type { NetworkOptions } from './network'
 import { storeLayer } from './storage'
 
-export interface RuntimeOptions extends NetworkOptions, SocketOptions {
+export interface RuntimeOptions extends NetworkOptions, SocketOptions, SafeRelayOptions {
   readonly interactive?: boolean
   readonly policy?: string
   readonly walletProjectId?: string
@@ -30,7 +31,7 @@ export function runtimeLayer(options: RuntimeOptions) {
     const manager = yield* Wallets
     return Signer.of({ account: options.signer ?? null, policy: options.policy, external: options.externalSigner ? () => Effect.succeed(options.externalSigner ?? null) : manager.signer })
   })).pipe(Layer.provide(wallets))
-  return Layer.mergeAll(networkLayer(options), storeLayer(options.database), signing, wallets, socketLayer(options))
+  return Layer.mergeAll(networkLayer(options), storeLayer(options.database), signing, wallets, socketLayer(options), safeRelayLayer(options))
 }
 
 export const environmentOptions = Effect.fn('Runtime.configuration')(function* () {
@@ -49,11 +50,16 @@ export const environmentOptions = Effect.fn('Runtime.configuration')(function* (
   const socketUrl = yield* Config.option(Config.String('SOCKET_API_URL'))
   const walletProjectId = yield* Config.option(Config.String('WALLETCONNECT_PROJECT_ID'))
   const smartWalletUrl = yield* Config.option(Config.String('EVM_SMART_WALLET_URL'))
+  const bundlerUrl = yield* Config.option(Config.Redacted('EVM_SAFE_BUNDLER_URL'))
+  const paymasterUrl = yield* Config.option(Config.Redacted('EVM_SAFE_PAYMASTER_URL'))
+  const relayChain = yield* Config.option(Config.Int('EVM_SAFE_RELAY_CHAIN_ID'))
+  const sponsorshipPolicyId = yield* Config.option(Config.String('EVM_SAFE_SPONSORSHIP_POLICY_ID'))
+  const safeRelay = Option.isSome(bundlerUrl) && Option.isSome(paymasterUrl) && Option.isSome(relayChain) ? { chainId: relayChain.value, bundlerUrl: bundlerUrl.value, paymasterUrl: paymasterUrl.value, sponsorshipPolicyId: Option.getOrUndefined(sponsorshipPolicyId) } : undefined
   const key = yield* Config.option(Config.Redacted('EVM_PRIVATE_KEY'))
   let signer: LocalAccount | undefined
   if (Option.isSome(key)) {
     const privateKey = yield* Schema.decodeUnknownEffect(Hash)(Redacted.value(key.value)).pipe(Effect.mapError(() => new EvmError({ code: 'InvalidInput', message: 'EVM_PRIVATE_KEY must contain a valid 32-byte private key.', retryable: false })))
     signer = yield* Effect.try({ try: () => privateKeyToAccount(privateKey), catch: () => new EvmError({ code: 'InvalidInput', message: 'EVM_PRIVATE_KEY is not a valid signing key.', retryable: false }) })
   }
-  return { database, rpcFallbacks, smartWalletUrl: Option.getOrUndefined(smartWalletUrl), policy: Option.getOrUndefined(policy), socketApiKey: Option.getOrUndefined(socketApiKey), socketAffiliate: Option.getOrUndefined(socketAffiliate), socketUrl: Option.getOrUndefined(socketUrl), walletProjectId: Option.getOrUndefined(walletProjectId), rpcUrl: Option.getOrUndefined(rpc), etherscanApiKey: Option.getOrUndefined(explorer), signer } satisfies RuntimeOptions
+  return { database, safeRelay, rpcFallbacks, smartWalletUrl: Option.getOrUndefined(smartWalletUrl), policy: Option.getOrUndefined(policy), socketApiKey: Option.getOrUndefined(socketApiKey), socketAffiliate: Option.getOrUndefined(socketAffiliate), socketUrl: Option.getOrUndefined(socketUrl), walletProjectId: Option.getOrUndefined(walletProjectId), rpcUrl: Option.getOrUndefined(rpc), etherscanApiKey: Option.getOrUndefined(explorer), signer } satisfies RuntimeOptions
 })

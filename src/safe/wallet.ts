@@ -10,7 +10,7 @@ export const safeInfo = Effect.fn('Safe.info')(function* (raw: typeof SafeTarget
   const input = yield* decodeSafe(SafeTarget, raw)
   const connection = yield* (yield* Network).client(input.chainId)
   const block = yield* rpc(() => connection.getBlockNumber())
-  yield* verifySafe(input.chainId, input.safe, block)
+  const modules = yield* verifySafe(input.chainId, input.safe, block)
   const [owners, threshold, nonce, version] = yield* Effect.all([
     rpc(() => connection.readContract({ address: input.safe, abi: safeAbi, functionName: 'getOwners', blockNumber: block })),
     rpc(() => connection.readContract({ address: input.safe, abi: safeAbi, functionName: 'getThreshold', blockNumber: block })),
@@ -19,7 +19,7 @@ export const safeInfo = Effect.fn('Safe.info')(function* (raw: typeof SafeTarget
   ], { concurrency: 4 })
   if (version !== '1.4.1') return yield* safeError('Unsupported Safe version.')
   yield* validateOwners(owners, Number(threshold), input.safe)
-  return { ...input, owners, threshold: Number(threshold), nonce: nonce.toString(), version, block: block.toString() }
+  return { ...input, modules, owners, threshold: Number(threshold), nonce: nonce.toString(), version, block: block.toString() }
 })
 
 export const safePredict = Effect.fn('Safe.predict')(function* (raw: typeof SafeCreateInput.Type) {

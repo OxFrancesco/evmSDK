@@ -1,0 +1,32 @@
+{
+  "allowance": {
+    "address": "0xAA46724893dedD72658219405185Fb0Fc91e091C",
+    "version": "0.1.1",
+    "codeHash": "0x7aa63affdca06fe94576f00077ad61a02ccf203a5da31e1b4ed595df7b65cf3e"
+  },
+  "erc4337": {
+    "address": "0x75cf11467937ce3F2f357CE24ffc3DBF8fD5c226",
+    "version": "0.3.0",
+    "codeHash": "0x2aea997c4e3cf0e2f333025372e219abcfde81c21fc2f8fb066414a5685dd3e0"
+  },
+  "passkeyFactory": {
+    "address": "0x1d31F259eE307358a26dFb23EB365939E8641195",
+    "version": "0.2.1",
+    "codeHash": "0x655b1f71eedf5aa223c8a7f5fc70f140a6475259a030829bc731642e181e4853"
+  },
+  "p256": {
+    "address": "0xc2b78104907F722DABAc4C69f826a522B2754De4",
+    "version": "0.2.1",
+    "codeHash": "0x3cd725b6ba67b40b7979190c41a015e82cf21e098eb61832ba623f8538bab7fc"
+  },
+  "roles": {
+    "address": "0xf2964ce6161ce0e75964fe7927ce114cb0b283d5",
+    "version": "2.1.1",
+    "codeHash": "0x471d8b3b419f1eb955230c0326c8812176df49bf3c7b414a563fda5a3c6c10b6"
+  },
+  "rolesFactory": {
+    "address": "0x000000000000aDdB49795b0f9bA5BC298cDda236",
+    "version": "registry",
+    "codeHash": "0x01623cbcf010a1c326230f1b2d5f48a66b440232ee49096102bc84967dc5f21e"
+  }
+}
