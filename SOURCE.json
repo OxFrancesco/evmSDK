@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/OxFrancesco/BeeGreat",
-  "revision": "eefd64a86175d74ad01d5603d00185414bb5c058",
-  "dirty": true,
+  "revision": "c6b21e201c8a5f3fc2998c3c37c65b917fa36806",
+  "dirty": false,
   "package": "packages/evm"
 }

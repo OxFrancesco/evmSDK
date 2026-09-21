@@ -10,12 +10,13 @@
   "exports": {
     ".": "./src/index.ts",
     "./crossmint": "./src/crossmint.ts",
-    "./model": "./src/model.ts"
+    "./model": "./src/model.ts",
+    "./safe": "./src/safe.ts"
   },
   "scripts": {
     "cli": "bun src/cli.ts",
     "test": "bun test ./src",
-    "test:e2e": "bun scripts/e2e.ts",
+    "test:e2e": "bun scripts/e2e.ts && bun scripts/safe-e2e.ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --config .oxlintrc.json --tsconfig tsconfig.json src scripts",
     "build": "bun build src/cli.ts src/index.ts --target=bun --packages=external --outdir=dist",
@@ -27,6 +28,8 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@opentui/core": "0.5.1",
     "@opentui/react": "0.5.1",
+    "@safe-global/safe-contracts": "1.4.1-2",
+    "@safe-global/safe-deployments": "1.37.63",
     "@walletconnect/sign-client": "^2.24.0",
     "abitype": "1.0.8",
     "effect": "4.0.0-rc.115",

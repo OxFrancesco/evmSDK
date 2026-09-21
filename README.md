@@ -135,7 +135,15 @@ Foundry's `forge` and `anvil` are required for end-to-end tests. Fixtures use ra
 
 EIP-1559 execution includes OP Stack L1 data fee estimates where supported. Fee estimates can change after signing. Asset-change simulation requires RPC support. Inclusion, safe and finalized blocks are distinct. Call `status` again to detect reorgs. The tool does not promise that simulation predicts every contract outcome.
 
-The generic and Effect anti-slop rules run as errors. Effect is pinned to v4 beta.107. Reference clones remain read-only. The Crossmint SDK is Apache-2.0; existing Sugar and protocol licensing notices continue to apply.
+The generic and Effect anti-slop rules run as errors. Effect is pinned to v4 rc.115. Reference clones remain read-only. The Crossmint SDK is Apache-2.0; existing Sugar and protocol licensing notices continue to apply.
+
+## Safe organization wallets
+
+Create single-owner and threshold wallets with `safe-predict` and `safe-deploy`. The shared catalog also includes `safe-info`, `safe-propose`, `safe-approvals`, `safe-approve`, `safe-execute`, `safe-cancel-propose` and `safe-owner-propose`. Creation, approval and execution return unsigned plans for the normal approval and journal workflow. Import the Effect workflows from `@beegreat/evm/safe`.
+
+Supports official, module-free Safe 1.4.1 deployments. Approvals are on-chain and permanent for their hash; cancellation and owner changes require the current threshold. A shared backend controlling all owners does not provide independent custody. See [Safe organization wallets](./docs/39-safe-organization-wallets.md) for the full flow, recovery rules and verification limits. Local contract test evidence is saved in ignored `artifacts/safe-e2e.json`; live Crossmint relay execution is a separate check.
+
+Safe deployment metadata is MIT licensed. The pinned Safe contract artifact dependency retains its LGPL-3.0 license. This project is independent of Safe and Crossmint.
 
 ## Standalone repository
 

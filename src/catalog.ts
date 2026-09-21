@@ -1,3 +1,4 @@
+import { SafeTarget, SafeCreateInput, SafeDeployInput, SafeInfo, SafeProposalInput, SafeTransaction, SafeTransactionInput, SafeApprovalInput, SafeApprovals, SafeDeployment, SafeOwnerChangeInput, safeInfo, safePredict, safeDeploy, safePropose, safeApprovals, safeApprove, safeExecute, safeCancelProposal, safeChangeOwner } from './safe'
 import { Effect, Schema, Stream } from 'effect'
 import { erc20Abi, stringify } from 'viem'
 import { resolveContract, readContract, encodeCall } from './contracts'
@@ -5,7 +6,7 @@ import { attachTransaction, prepareReplacement, cancel, execute, prepare, Signer
 import { Address, CallInput, ChainId, ContractInput, EvmError, ExecuteInput, Hash, Id, PrepareCallInput, PrepareInput, Uint, WorkspaceEntry, publicOperation } from './model'
 import { Network, rpc } from './network'
 import { Store } from './storage'
-import { outputSchemas } from './outputs'
+import { OperationView, outputSchemas } from './outputs'
 import { Wallets } from './wallets'
 import { Policy, savePolicy, revokePolicy, policies } from './policy'
 import { Socket, SocketInput, SocketQuote, BridgePrepare, BridgeRecord, prepareBridge, runBridge, bridgeStatus, waitBridge } from './socket'
@@ -49,6 +50,15 @@ const operationId = Schema.Struct({ id: Id })
 const accountInput = Schema.Struct({ chainId: ChainId, address: Address })
 
 export const commands: ReadonlyArray<Command> = [
+  command('safe-info', 'Read owners, threshold and nonce of an official module-free Safe 1.4.1.', SafeTarget, safeInfo, SafeInfo),
+  command('safe-predict', 'Predict a deterministic Safe address. No deployment or signature.', SafeCreateInput, safePredict, SafeDeployment),
+  command('safe-deploy', 'Prepare deployment of a Safe with explicit owners and threshold. Execute the returned plan separately.', SafeDeployInput, safeDeploy, Schema.Struct({ ...OperationView.fields, deployment: SafeDeployment })),
+  command('safe-propose', 'Build a portable Safe CALL proposal at its current nonce. Does not approve or execute; values are wei. Refunds and delegatecall are disabled.', SafeProposalInput, safePropose, SafeTransaction),
+  command('safe-approvals', 'Verify the full proposal and read on-chain owner approvals. Rejects changed payloads and stale nonces.', SafeTransactionInput, safeApprovals, SafeApprovals),
+  command('safe-approve', 'Prepare an owner approveHash transaction for a full reviewed proposal. Approval is permanent for this hash. Execute the returned plan separately.', SafeApprovalInput, safeApprove, OperationView),
+  command('safe-execute', 'Prepare Safe execution only after the threshold of on-chain approvals. Execute the returned outer plan separately.', SafeApprovalInput, safeExecute, OperationView),
+  command('safe-cancel-propose', 'Propose a zero-value self-call at the current nonce. Cancellation requires owner approval and execution before a competing proposal.', SafeTarget, safeCancelProposal, SafeTransaction),
+  command('safe-owner-propose', 'Propose adding/removing an owner or changing the threshold. The current owners must approve and execute it.', SafeOwnerChangeInput, safeChangeOwner, SafeTransaction),
   command('inspect', 'Discover a verified ABI or supply abi/signatures. Resolves EIP-1967 implementation-slot proxies when discovering.', ContractInput, resolveContract),
   command('read', 'Call a contract at a recorded block. Integers serialize as decimal strings.', CallInput, readContract),
   command('prepare', 'Simulate and persist an unsigned raw transaction. value is wei. key is required and identifies this intent.', PrepareInput, input => prepare(input).pipe(Effect.map(publicOperation))),

@@ -24,3 +24,5 @@ export { createMonitor, pollMonitor, acknowledgeMonitor, pauseMonitor, readWatch
 export { attachTransaction, prepareReplacement } from './execution'
 export { crossmintAdapter, crossmintChains, CrossmintTransaction, normalizeCrossmintTransaction, SmartTransaction } from './crossmint'
 export type { SmartWalletAdapter } from './crossmint'
+
+export * from './safe'
